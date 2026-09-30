@@ -1,0 +1,38 @@
+name: build
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  linux:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake g++ libglfw3-dev libvulkan-dev glslang-tools mesa-vulkan-drivers xvfb
+      - name: Build
+        run: |
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+          cmake --build build -j
+      - name: Gameplay self-test (software Vulkan)
+        run: xvfb-run -a -s "-screen 0 640x360x24" ./build/mythbound --windowed 640 360 --selftest
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mythbound-linux
+          path: build/mythbound
+
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build
+        run: |
+          cmake -S . -B build
+          cmake --build build --config Release
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mythbound-windows
+          path: build/Release/mythbound.exe
