@@ -27,6 +27,9 @@
 #include "particle_vert.h"
 #include "particle_frag.h"
 #include "post_vert.h"
+#include "ssao_frag.h"
+#include "rays_frag.h"
+#include "shadow_frag.h"
 #include "bloom_down_frag.h"
 #include "bloom_up_frag.h"
 #include "composite_frag.h"
@@ -543,6 +546,20 @@ bool Renderer::createTargets() {
         bi.layers = 1;
         VK_CHECK(vkCreateFramebuffer(device_, &bi, nullptr, &bloomFb_[i]));
     }
+    for (int k = 0; k < 2; k++) {
+        Image& im = k == 0 ? ao_ : rays_;
+        VkFramebuffer& fb = k == 0 ? aoFb_ : raysFb_;
+        im = createImage(std::max(1u, w / 2), std::max(1u, h / 2), hdrFormat_, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+                         VK_IMAGE_ASPECT_COLOR_BIT);
+        VkFramebufferCreateInfo bi{VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO};
+        bi.renderPass = bloomPass_;
+        bi.attachmentCount = 1;
+        bi.pAttachments = &im.view;
+        bi.width = im.w;
+        bi.height = im.h;
+        bi.layers = 1;
+        VK_CHECK(vkCreateFramebuffer(device_, &bi, nullptr, &fb));
+    }
     return true;
 }
 
@@ -554,6 +571,12 @@ void Renderer::destroyTargets() {
         bloomFb_[i] = VK_NULL_HANDLE;
         destroyImage(bloom_[i]);
     }
+    for (VkFramebuffer* fb : {&aoFb_, &raysFb_}) {
+        if (*fb) vkDestroyFramebuffer(device_, *fb, nullptr);
+        *fb = VK_NULL_HANDLE;
+    }
+    destroyImage(ao_);
+    destroyImage(rays_);
     destroyImage(msaaColor_);
     destroyImage(msaaDepth_);
     destroyImage(hdr_);
@@ -713,7 +736,7 @@ VkPipeline Renderer::buildPipeline(const PipeCfg& c) {
     stages[1].pName = "main";
 
     VkVertexInputBindingDescription bindings[2]{};
-    VkVertexInputAttributeDescription attrs[11]{};
+    VkVertexInputAttributeDescription attrs[13]{};
     VkPipelineVertexInputStateCreateInfo vi{VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO};
     if (c.input == 1 || c.input == 2) {
         bindings[0] = {0, sizeof(Vertex), VK_VERTEX_INPUT_RATE_VERTEX};
@@ -722,13 +745,15 @@ VkPipeline Renderer::buildPipeline(const PipeCfg& c) {
         attrs[2] = {2, 0, VK_FORMAT_R32G32B32A32_SFLOAT, offsetof(Vertex, color)};
         attrs[3] = {3, 0, VK_FORMAT_R32G32B32A32_SFLOAT, offsetof(Vertex, skin)};
         attrs[4] = {4, 0, VK_FORMAT_R32_SFLOAT, offsetof(Vertex, sway)};
-        uint32_t na = 5, nb = 1;
+        attrs[5] = {11, 0, VK_FORMAT_R32G32_SFLOAT, offsetof(Vertex, uv)};
+        attrs[6] = {12, 0, VK_FORMAT_R32_SFLOAT, offsetof(Vertex, card)};
+        uint32_t na = 7, nb = 1;
         if (c.input == 1) {
             bindings[1] = {1, sizeof(Instance), VK_VERTEX_INPUT_RATE_INSTANCE};
-            for (uint32_t k = 0; k < 4; k++) attrs[5 + k] = {5 + k, 1, VK_FORMAT_R32G32B32A32_SFLOAT, k * 16};
-            attrs[9] = {9, 1, VK_FORMAT_R32G32B32A32_SFLOAT, offsetof(Instance, color)};
-            attrs[10] = {10, 1, VK_FORMAT_R32G32B32A32_SFLOAT, offsetof(Instance, params)};
-            na = 11;
+            for (uint32_t k = 0; k < 4; k++) attrs[7 + k] = {5 + k, 1, VK_FORMAT_R32G32B32A32_SFLOAT, k * 16};
+            attrs[11] = {9, 1, VK_FORMAT_R32G32B32A32_SFLOAT, offsetof(Instance, color)};
+            attrs[12] = {10, 1, VK_FORMAT_R32G32B32A32_SFLOAT, offsetof(Instance, params)};
+            na = 13;
             nb = 2;
         }
         vi.vertexBindingDescriptionCount = nb;
@@ -740,9 +765,10 @@ VkPipeline Renderer::buildPipeline(const PipeCfg& c) {
         bindings[0] = {0, stride, VK_VERTEX_INPUT_RATE_INSTANCE};
         attrs[0] = {0, 0, VK_FORMAT_R32G32B32A32_SFLOAT, 0};
         attrs[1] = {1, 0, VK_FORMAT_R32G32B32A32_SFLOAT, 16};
+        attrs[2] = {2, 0, VK_FORMAT_R32G32B32A32_SFLOAT, 32};
         vi.vertexBindingDescriptionCount = 1;
         vi.pVertexBindingDescriptions = bindings;
-        vi.vertexAttributeDescriptionCount = 2;
+        vi.vertexAttributeDescriptionCount = c.input == 4 ? 3 : 2;
         vi.pVertexAttributeDescriptions = attrs;
     }
     VkPipelineInputAssemblyStateCreateInfo ia{VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO};
@@ -767,7 +793,7 @@ VkPipeline Renderer::buildPipeline(const PipeCfg& c) {
     ds.depthWriteEnable = c.depthWrite;
     ds.depthCompareOp = VK_COMPARE_OP_LESS_OR_EQUAL;
     VkPipelineColorBlendAttachmentState cba{};
-    cba.colorWriteMask = 0xF;
+    cba.colorWriteMask = c.rgbOnly ? 0x7 : 0xF;
     if (c.blend) {
         cba.blendEnable = VK_TRUE;
         cba.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
@@ -815,10 +841,9 @@ bool Renderer::createPipelines() {
     li.bindingCount = 5;
     li.pBindings = b;
     VK_CHECK(vkCreateDescriptorSetLayout(device_, &li, nullptr, &sceneSetLayout_));
-    VkDescriptorSetLayoutBinding pb[2]{};
-    pb[0] = {0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr};
-    pb[1] = {1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr};
-    li.bindingCount = 2;
+    VkDescriptorSetLayoutBinding pb[4]{};
+    for (uint32_t i = 0; i < 4; i++) pb[i] = {i, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr};
+    li.bindingCount = 4;
     li.pBindings = pb;
     VK_CHECK(vkCreateDescriptorSetLayout(device_, &li, nullptr, &postSetLayout_));
 
@@ -830,7 +855,10 @@ bool Renderer::createPipelines() {
     pl.pPushConstantRanges = &pcr;
     VK_CHECK(vkCreatePipelineLayout(device_, &pl, nullptr, &sceneLayout_));
     pl.pSetLayouts = &postSetLayout_;
+    VkPushConstantRange postRange{vf, 0, 64};
+    pl.pPushConstantRanges = &postRange;
     VK_CHECK(vkCreatePipelineLayout(device_, &pl, nullptr, &postLayout_));
+    pl.pPushConstantRanges = &pcr;
     pl.setLayoutCount = 0;
     VK_CHECK(vkCreatePipelineLayout(device_, &pl, nullptr, &uiLayout_));
 
@@ -842,6 +870,7 @@ bool Renderer::createPipelines() {
     VkShaderModule waV = MOD(water_vert), waF = MOD(water_frag);
     VkShaderModule skV = MOD(sky_vert), skF = MOD(sky_frag);
     VkShaderModule paV = MOD(particle_vert), paF = MOD(particle_frag);
+    VkShaderModule ssF = MOD(ssao_frag), raF = MOD(rays_frag), shF = MOD(shadow_frag);
     VkShaderModule poV = MOD(post_vert), bdF = MOD(bloom_down_frag), buF = MOD(bloom_up_frag), coF = MOD(composite_frag);
     VkShaderModule uiV = MOD(ui_vert), uiF = MOD(ui_frag);
 #undef MOD
@@ -854,6 +883,7 @@ bool Renderer::createPipelines() {
     c.depthBias = true;
     c.colorOutput = false;
     c.vs = shV;
+    c.fs = shF;
     shadowPipe_ = buildPipeline(c);
     c.vs = shSkV;
     shadowSkinPipe_ = buildPipeline(c);
@@ -882,7 +912,9 @@ bool Renderer::createPipelines() {
     c.fs = waF;
     c.depthWrite = false;
     c.blend = 1;
+    c.rgbOnly = true;
     waterPipe_ = buildPipeline(c);
+    c.rgbOnly = false;
     c.input = 0;
     c.vs = skV;
     c.fs = skF;
@@ -895,6 +927,7 @@ bool Renderer::createPipelines() {
     c.depthTest = true;
     c.depthWrite = false;
     c.blend = 1;
+    c.rgbOnly = true;
     particleAlphaPipe_ = buildPipeline(c);
     c.blend = 2;
     particleAddPipe_ = buildPipeline(c);
@@ -903,6 +936,10 @@ bool Renderer::createPipelines() {
     c.layout = postLayout_;
     c.pass = bloomPass_;
     c.vs = poV;
+    c.fs = ssF;
+    ssaoPipe_ = buildPipeline(c);
+    c.fs = raF;
+    raysPipe_ = buildPipeline(c);
     c.fs = bdF;
     bloomDownPipe_ = buildPipeline(c);
     c.fs = buF;
@@ -919,10 +956,10 @@ bool Renderer::createPipelines() {
     c.blend = 1;
     uiPipe_ = buildPipeline(c);
 
-    for (auto m : {litV, skinV, litF, terV, terF, shV, shSkV, grV, grF, waV, waF, skV, skF, paV, paF, poV, bdF, buF, coF, uiV, uiF})
+    for (auto m : {litV, skinV, litF, terV, terF, shV, shSkV, grV, grF, waV, waF, skV, skF, paV, paF, poV, bdF, buF, coF, uiV, uiF, ssF, raF, shF})
         vkDestroyShaderModule(device_, m, nullptr);
     return shadowPipe_ && shadowSkinPipe_ && terrainPipe_ && litPipe_ && skinPipe_ && grassPipe_ && waterPipe_ && skyPipe_ && particleAddPipe_ &&
-           particleAlphaPipe_ && bloomDownPipe_ && bloomUpPipe_ && compositePipe_ && uiPipe_;
+           particleAlphaPipe_ && ssaoPipe_ && raysPipe_ && bloomDownPipe_ && bloomUpPipe_ && compositePipe_ && uiPipe_;
 }
 
 bool Renderer::createStatic() {
@@ -961,15 +998,16 @@ bool Renderer::createStatic() {
     uint32_t g0 = 0;
     grassTex_ = uploadImage(1, 1, VK_FORMAT_R8G8B8A8_UNORM, &g0, 4);
 
+    const uint32_t postSets = BLOOM_LEVELS * 2 + 3;
     VkDescriptorPoolSize sizes[3] = {{VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, FRAMES},
-                                     {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, FRAMES * 3 + BLOOM_LEVELS * 4 + 4},
+                                     {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, FRAMES * 3 + postSets * 4},
                                      {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, FRAMES}};
     VkDescriptorPoolCreateInfo dp{VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
-    dp.maxSets = FRAMES + BLOOM_LEVELS * 2 + 2;
+    dp.maxSets = FRAMES + postSets;
     dp.poolSizeCount = 3;
     dp.pPoolSizes = sizes;
     VK_CHECK(vkCreateDescriptorPool(device_, &dp, nullptr, &descPool_));
-    std::vector<VkDescriptorSetLayout> layouts(BLOOM_LEVELS * 2 + 1, postSetLayout_);
+    std::vector<VkDescriptorSetLayout> layouts(postSets, postSetLayout_);
     std::vector<VkDescriptorSet> sets(layouts.size());
     VkDescriptorSetAllocateInfo dai{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
     dai.descriptorPool = descPool_;
@@ -981,13 +1019,15 @@ bool Renderer::createStatic() {
         upSets_[i] = sets[BLOOM_LEVELS + i];
     }
     compositeSet_ = sets[BLOOM_LEVELS * 2];
+    aoSet_ = sets[BLOOM_LEVELS * 2 + 1];
+    raysSet_ = sets[BLOOM_LEVELS * 2 + 2];
     return true;
 }
 
 void Renderer::writePostSets() {
     std::vector<VkDescriptorImageInfo> infos;
     std::vector<VkWriteDescriptorSet> writes;
-    infos.reserve(64);
+    infos.reserve(128);
     auto write = [&](VkDescriptorSet set, uint32_t binding, VkImageView view) {
         infos.push_back({linearSampler_, view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL});
         VkWriteDescriptorSet w{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
@@ -998,14 +1038,20 @@ void Renderer::writePostSets() {
         w.pImageInfo = &infos.back();
         writes.push_back(w);
     };
+    auto set4 = [&](VkDescriptorSet set, VkImageView a, VkImageView b, VkImageView c, VkImageView d) {
+        write(set, 0, a);
+        write(set, 1, b);
+        write(set, 2, c);
+        write(set, 3, d);
+    };
+    infos.reserve(128);
     for (int i = 0; i < BLOOM_LEVELS; i++) {
-        write(downSets_[i], 0, i == 0 ? hdr_.view : bloom_[i - 1].view);
-        write(downSets_[i], 1, hdr_.view);
-        write(upSets_[i], 0, bloom_[std::min(i + 1, BLOOM_LEVELS - 1)].view);
-        write(upSets_[i], 1, hdr_.view);
+        set4(downSets_[i], i == 0 ? hdr_.view : bloom_[i - 1].view, hdr_.view, hdr_.view, hdr_.view);
+        set4(upSets_[i], bloom_[std::min(i + 1, BLOOM_LEVELS - 1)].view, hdr_.view, hdr_.view, hdr_.view);
     }
-    write(compositeSet_, 0, hdr_.view);
-    write(compositeSet_, 1, bloom_[0].view);
+    set4(compositeSet_, hdr_.view, bloom_[0].view, ao_.view, rays_.view);
+    set4(aoSet_, hdr_.view, hdr_.view, hdr_.view, hdr_.view);
+    set4(raysSet_, hdr_.view, hdr_.view, hdr_.view, hdr_.view);
     vkUpdateDescriptorSets(device_, (uint32_t)writes.size(), writes.data(), 0, nullptr);
 }
 
@@ -1183,7 +1229,7 @@ void Renderer::shutdown() {
     destroyImage(heightTex_);
     destroyImage(grassTex_);
     destroySwapchain();
-    for (auto p : {shadowPipe_, shadowSkinPipe_, terrainPipe_, litPipe_, skinPipe_, grassPipe_, waterPipe_, skyPipe_, particleAddPipe_,
+    for (auto p : {shadowPipe_, shadowSkinPipe_, terrainPipe_, litPipe_, skinPipe_, grassPipe_, waterPipe_, skyPipe_, particleAddPipe_, ssaoPipe_, raysPipe_,
                    particleAlphaPipe_, bloomDownPipe_, bloomUpPipe_, compositePipe_, uiPipe_})
         vkDestroyPipeline(device_, p, nullptr);
     vkDestroyPipelineLayout(device_, sceneLayout_, nullptr);
@@ -1302,7 +1348,7 @@ void Renderer::recordFrame(Frame& f, uint32_t imageIndex, FrameScene& scene) {
         vkCmdBeginRenderPass(cmd, &rb, VK_SUBPASS_CONTENTS_INLINE);
         viewport(0, 0, (float)extent_.width, (float)extent_.height);
         vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, sceneLayout_, 0, 1, &f.set, 0, nullptr);
-        float pc[4] = {0, (float)GRASS_N, 0, 0};
+        float pc[4] = {0, (float)GRASS_N, (float)samples_, 0};
         vkCmdPushConstants(cmd, sceneLayout_, pcStages, 0, 16, pc);
 
         vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, skyPipe_);
@@ -1335,7 +1381,32 @@ void Renderer::recordFrame(Frame& f, uint32_t imageIndex, FrameScene& scene) {
         vkCmdEndRenderPass(cmd);
     }
 
-    // 3. Bloom: progressive downsample, then upsample-accumulate.
+    // 3. Screen-space ambient occlusion and god rays (half resolution).
+    for (int k = 0; k < 2; k++) {
+        const Image& im = k == 0 ? ao_ : rays_;
+        VkRenderPassBeginInfo rb{VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO};
+        rb.renderPass = bloomPass_;
+        rb.framebuffer = k == 0 ? aoFb_ : raysFb_;
+        rb.renderArea = {{0, 0}, {im.w, im.h}};
+        vkCmdBeginRenderPass(cmd, &rb, VK_SUBPASS_CONTENTS_INLINE);
+        viewport(0, 0, (float)im.w, (float)im.h);
+        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, k == 0 ? ssaoPipe_ : raysPipe_);
+        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, postLayout_, 0, 1, k == 0 ? &aoSet_ : &raysSet_, 0, nullptr);
+        float pc[16] = {};
+        if (k == 0) {
+            float tanY = scene.post3.x, aspect = scene.post3.y;
+            float v[8] = {tanY * aspect, tanY, 1.2f, scene.post2.w, 1.0f / hdr_.w, 1.0f / hdr_.h, scene.post3.z, 0};
+            std::memcpy(pc, v, sizeof(v));
+        } else {
+            float v[8] = {scene.post2.x, scene.post2.y, scene.post2.z, 0.97f, scene.sunScreenColor.x, scene.sunScreenColor.y, scene.sunScreenColor.z, 0};
+            std::memcpy(pc, v, sizeof(v));
+        }
+        vkCmdPushConstants(cmd, postLayout_, pcStages, 0, 64, pc);
+        vkCmdDraw(cmd, 3, 1, 0, 0);
+        vkCmdEndRenderPass(cmd);
+    }
+
+    // 4. Bloom: progressive downsample, then upsample-accumulate.
     for (int i = 0; i < BLOOM_LEVELS; i++) {
         VkRenderPassBeginInfo rb{VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO};
         rb.renderPass = bloomPass_;
@@ -1346,8 +1417,8 @@ void Renderer::recordFrame(Frame& f, uint32_t imageIndex, FrameScene& scene) {
         vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, bloomDownPipe_);
         vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, postLayout_, 0, 1, &downSets_[i], 0, nullptr);
         const Image& src = i == 0 ? hdr_ : bloom_[i - 1];
-        float pc[4] = {1.0f / src.w, 1.0f / src.h, i == 0 ? 1.0f : 0.0f, 0};
-        vkCmdPushConstants(cmd, postLayout_, pcStages, 0, 16, pc);
+        float pc[16] = {1.0f / src.w, 1.0f / src.h, i == 0 ? 1.0f : 0.0f, 0};
+        vkCmdPushConstants(cmd, postLayout_, pcStages, 0, 64, pc);
         vkCmdDraw(cmd, 3, 1, 0, 0);
         vkCmdEndRenderPass(cmd);
     }
@@ -1361,13 +1432,13 @@ void Renderer::recordFrame(Frame& f, uint32_t imageIndex, FrameScene& scene) {
         vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, bloomUpPipe_);
         vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, postLayout_, 0, 1, &upSets_[i], 0, nullptr);
         const Image& src = bloom_[i + 1];
-        float pc[4] = {1.0f / src.w, 1.0f / src.h, 0, 0};
-        vkCmdPushConstants(cmd, postLayout_, pcStages, 0, 16, pc);
+        float pc[16] = {1.0f / src.w, 1.0f / src.h, 0, 0};
+        vkCmdPushConstants(cmd, postLayout_, pcStages, 0, 64, pc);
         vkCmdDraw(cmd, 3, 1, 0, 0);
         vkCmdEndRenderPass(cmd);
     }
 
-    // 4. Composite (tonemap + grade) and UI onto the swapchain.
+    // 5. Composite (tonemap + grade) and UI onto the swapchain.
     {
         VkRenderPassBeginInfo rb{VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO};
         rb.renderPass = finalPass_;
@@ -1378,8 +1449,9 @@ void Renderer::recordFrame(Frame& f, uint32_t imageIndex, FrameScene& scene) {
         vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, compositePipe_);
         vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, postLayout_, 0, 1, &compositeSet_, 0, nullptr);
         const vec4& post = scene.ubo.post;
-        float pc[4] = {post.x, post.y, post.z, post.w};
-        vkCmdPushConstants(cmd, postLayout_, pcStages, 0, 16, pc);
+        float pc[16] = {post.x, post.y, post.z, post.w, scene.post2.x, scene.post2.y, scene.post2.z, scene.post2.w,
+                        scene.post3.z, scene.post3.w, 1.0f / extent_.width, 1.0f / extent_.height};
+        vkCmdPushConstants(cmd, postLayout_, pcStages, 0, 64, pc);
         vkCmdDraw(cmd, 3, 1, 0, 0);
         uint32_t uiCount = (uint32_t)std::min<size_t>(scene.ui.size(), MAX_UI);
         if (uiCount) {

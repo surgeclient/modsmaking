@@ -51,5 +51,5 @@ void main() {
         float fade = smoothstep(0.0, 0.18, d.y);
         col = mix(col, cloud, cover * 0.92 * fade);
     }
-    outColor = vec4(col, 1.0);
+    outColor = vec4(col, 10000.0);
 }

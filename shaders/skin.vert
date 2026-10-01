@@ -10,6 +10,6 @@ void main() {
     mat4 M = mat4(m0, m1, m2, m3) * B;
     vec4 wp = M * vec4(inPos, 1.0);
     mat3 N = transpose(inverse(mat3(M)));
-    emitOutputs(wp.xyz, normalize(N * inNormal), inPos);
+    emitOutputs(wp.xyz, normalize(N * inNormal), inPos, inSway);
     gl_Position = S.viewProj * wp;
 }

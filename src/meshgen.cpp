@@ -474,3 +474,17 @@ void addCrystal(MeshData& m, vec3 baseP, vec3 dir, float r, float len, vec3 colo
         m.idx.insert(m.idx.end(), {t, t + 2, t + 1});
     }
 }
+
+void addCard(MeshData& m, vec3 p0, vec3 p1, vec3 p2, vec3 p3, vec2 uv0, vec2 uv1, vec2 uv2, vec2 uv3, vec3 normal, vec3 color, float type, int bone,
+             float sway, float ao, float emissive) {
+    uint32_t b = (uint32_t)m.v.size();
+    vec3 pts[4] = {p0, p1, p2, p3};
+    vec2 uvs[4] = {uv0, uv1, uv2, uv3};
+    for (int i = 0; i < 4; i++) {
+        Vertex v{pts[i], normal, vec4(color, emissive), vec4((float)bone, (float)bone, 0, ao), sway};
+        v.uv = uvs[i];
+        v.card = type;
+        m.v.push_back(v);
+    }
+    m.idx.insert(m.idx.end(), {b, b + 1, b + 2, b, b + 2, b + 3});
+}

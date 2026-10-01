@@ -9,10 +9,15 @@ float shadowCascade(int c, vec3 wp, vec3 n, float ndl) {
     float bias = (c == 0 ? 0.0003 : 0.0009) * (1.0 + 2.0 * (1.0 - ndl));
     vec2 texel = 1.0 / vec2(textureSize(shadowMap, 0));
     vec2 base = vec2((uv.x + float(c)) * 0.5, uv.y);
+    const vec2 poisson[12] = vec2[](vec2(-0.326, -0.406), vec2(-0.840, -0.074), vec2(-0.696, 0.457), vec2(-0.203, 0.621), vec2(0.962, -0.195),
+                                    vec2(0.473, -0.480), vec2(0.519, 0.767), vec2(0.185, -0.893), vec2(0.507, 0.064), vec2(0.896, 0.412),
+                                    vec2(-0.322, -0.933), vec2(-0.792, -0.598));
+    float ang = fract(sin(dot(wp.xz, vec2(12.9898, 78.233))) * 43758.5453) * 6.2831;
+    mat2 rot = mat2(cos(ang), sin(ang), -sin(ang), cos(ang));
+    float radius = c == 0 ? 2.2 : 1.4;
     float sum = 0.0;
-    for (int x = -1; x <= 1; x++)
-        for (int y = -1; y <= 1; y++) sum += texture(shadowMap, vec3(base + vec2(x, y) * texel * 1.2, p.z - bias));
-    float s = sum / 9.0;
+    for (int i = 0; i < 12; i++) sum += texture(shadowMap, vec3(base + rot * poisson[i] * texel * radius, p.z - bias));
+    float s = sum / 12.0;
     if (c == 1) s = mix(s, 1.0, smoothstep(0.4, 0.49, max(abs(uv.x - 0.5), abs(uv.y - 0.5))));
     return s;
 }

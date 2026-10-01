@@ -99,6 +99,19 @@ void Game::setupLighting(FrameScene& s, vec3 camPos, vec3 camTarget, const mat4&
     mat4 vp = proj * view;
     u.viewProj = vp;
     u.invViewProj = inverse(vp);
+    // Post-processing: god rays from the sun's position on screen, AO and sharpening.
+    vec4 sc = vp.transform(vec4(camPos + sun * 1000.0f, 1.0f));
+    float raysStrength = 0;
+    vec2 sunUV(0.5f, 0.5f);
+    if (sc.w > 0) {
+        sunUV = vec2(sc.x / sc.w * 0.5f + 0.5f, sc.y / sc.w * 0.5f + 0.5f);
+        float onScreen = 1.0f - smoothstep(0.6f, 1.4f, std::max(std::fabs(sunUV.x - 0.5f), std::fabs(sunUV.y - 0.5f)) * 2.0f - 0.4f);
+        raysStrength = dayF * onScreen * 0.55f * (0.6f + sunset);
+    }
+    s.post2 = vec4(sunUV.x, sunUV.y, raysStrength, 0.9f);
+    s.post3 = vec4(std::tan(fov_ * 0.5f), (float)std::max(1, renderer_->width()) / (float)std::max(1, renderer_->height()), totalTime_, 0.3f);
+    vec3 rayCol = lerp(vec3(1.0f, 0.55f, 0.25f), vec3(1.0f, 0.9f, 0.75f), smoothstep(0.0f, 0.4f, sun.y));
+    s.sunScreenColor = vec4(rayCol, 1);
     vec3 fwd = normalize(camTarget - camPos);
     vec3 focus = mode_ == GM_PLAY ? player_.pos : camPos + fwd * 15.0f;
     u.lightViewProj[0] = shadowMatrix(focus + fwd * 8.0f, keyDir, 26.0f);
@@ -222,14 +235,8 @@ void Game::drawProps(FrameScene& s) {
         pos.y = terrain_.heightAt(pos.x, pos.z);
         if (!sphereVisible(pos + vec3(0, 3, 0), 5)) continue;
         mat4 root = translate(pos) * rotateY(a + PI);
-        seg(s, MESH_CYL, root, vec3(0, -0.5f, 0), vec3(0, 5.5f, 0), 0.35f, vec3(0.25f, 0.18f, 0.15f));
-        seg(s, MESH_CYL, root, vec3(-0.9f, 4.2f, 0), vec3(0.9f, 4.4f, 0), 0.15f, vec3(0.25f, 0.18f, 0.15f));
-        ell(s, root, vec3(0, 5.8f, 0), vec3(0.8f, 0.9f, 0.9f), vec3(0.85f, 0.82f, 0.72f));
-        for (int e = -1; e <= 1; e += 2) {
-            ell(s, root, vec3(e * 0.18f, 5.9f, 0.38f), vec3(0.16f, 0.12f, 0.1f), vec3(1.0f, 0.15f, 0.05f), 0.2f + glowAmt * 2.5f);
-            seg(s, MESH_CONE, root, vec3(e * 0.3f, 6.1f, 0), vec3(e * 0.9f, 7.0f, -0.2f), 0.2f, vec3(0.85f, 0.82f, 0.72f));
-        }
-        if (glowAmt > 0.1f) glow(s, pos + rotateY(a + PI).transformDir(vec3(0, 5.9f, 0.45f)), 0.6f, vec3(1.0f, 0.15f, 0.05f), glowAmt * 0.7f);
+        s.inst[models_.totemMesh].push_back({root, vec4(1, 1, 1, 0.1f + glowAmt), vec4(0.1f, 5, 0, 0)});
+        if (glowAmt > 0.1f) glow(s, pos + rotateY(a + PI).transformDir(vec3(0, 5.82f, 0.45f)), 0.7f, vec3(1.0f, 0.15f, 0.05f), glowAmt * 0.7f);
     }
     if (glowAmt > 0.02f && sphereVisible(vec3(0, -30, 0), 30)) {
         Rng cr(31337);
@@ -487,44 +494,19 @@ void Game::drawStructures(FrameScene& s) {
         mat4 root = translate(st.pos) * rotateY(st.yaw);
         switch (st.type) {
             case I_CAMPFIRE:
-                for (int k = 0; k < 9; k++) {
-                    float a = k * TAU / 9;
-                    ell(s, root, vec3(std::sin(a) * 0.75f, 0.1f, std::cos(a) * 0.75f), vec3(0.38f, 0.26f, 0.34f), vec3(0.42f, 0.4f, 0.38f));
-                }
-                seg(s, MESH_CYL, root, vec3(-0.55f, 0.12f, -0.2f), vec3(0.5f, 0.3f, 0.2f), 0.15f, vec3(0.3f, 0.2f, 0.11f));
-                seg(s, MESH_CYL, root, vec3(-0.3f, 0.3f, 0.5f), vec3(0.3f, 0.12f, -0.5f), 0.15f, vec3(0.3f, 0.2f, 0.11f));
-                seg(s, MESH_CYL, root, vec3(0.2f, 0.12f, 0.5f), vec3(-0.1f, 0.4f, -0.4f), 0.13f, vec3(0.28f, 0.18f, 0.1f));
-                ell(s, root, vec3(0, 0.15f, 0), vec3(0.7f, 0.15f, 0.7f), vec3(1.0f, 0.35f, 0.08f), 2.0f + flick * 5);
+                s.inst[models_.campfireMesh].push_back({root, vec4(1, 1, 1, 1.0f + flick * 3), vec4(0.1f, 5, 0, 0)});
                 glow(s, st.pos + vec3(0, 0.6f, 0), 1.6f, vec3(1.0f, 0.45f, 0.12f), 0.55f + flick);
                 break;
             case I_CAULDRON:
-                for (int k = 0; k < 3; k++) {
-                    float a = k * TAU / 3;
-                    seg(s, MESH_CYL, root, vec3(std::sin(a) * 0.6f, 0, std::cos(a) * 0.6f), vec3(std::sin(a) * 0.4f, 0.6f, std::cos(a) * 0.4f), 0.09f,
-                        vec3(0.2f, 0.2f, 0.22f), 0, 0.6f);
-                }
-                ell(s, root, vec3(0, 0.75f, 0), vec3(1.3f, 1.0f, 1.3f), vec3(0.15f, 0.15f, 0.17f), 0, 0.7f);
-                ell(s, root, vec3(0, 1.18f, 0), vec3(1.0f, 0.12f, 1.0f), vec3(0.3f, 0.95f, 0.5f), 1.4f + flick * 3);
-                glow(s, st.pos + vec3(0, 1.4f, 0), 1.0f, vec3(0.3f, 1.0f, 0.5f), 0.4f);
+                s.inst[models_.cauldronMesh].push_back({root, vec4(1, 1, 1, 1.0f + flick * 2), vec4(0.7f, 0, 0, 0)});
+                glow(s, st.pos + vec3(0, 1.3f, 0), 1.0f, vec3(0.3f, 1.0f, 0.5f), 0.4f);
                 ell(s, root, vec3(0, 0.12f, 0), vec3(0.5f, 0.2f, 0.5f), vec3(1.0f, 0.4f, 0.1f), 2.0f);
                 break;
             case I_WOODWALL:
             case I_SPIKEWALL: {
-                vec3 wood(0.45f, 0.31f, 0.18f);
                 float dmg = saturate(st.hp / 900.0f);
-                wood = mixc(vec3(0.2f, 0.14f, 0.1f), wood, dmg);
-                for (int k = 0; k < 6; k++)
-                    seg(s, MESH_CYL, root, vec3(-1.75f + k * 0.7f, -0.3f, 0), vec3(-1.75f + k * 0.7f, 3.0f + (k % 2) * 0.25f, 0), 0.4f, wood * (k % 2 ? 1.0f : 0.88f));
-                box(s, root, vec3(0, 2.2f, 0.22f), vec3(4.2f, 0.22f, 0.12f), wood * 0.75f);
-                box(s, root, vec3(0, 0.8f, 0.22f), vec3(4.2f, 0.22f, 0.12f), wood * 0.75f);
-                for (int k = 0; k < 6; k++)
-                    push(s, MESH_CONE, root * translate(vec3(-1.75f + k * 0.7f, 3.35f + (k % 2) * 0.25f, 0)) * scale(vec3(0.4f, 0.5f, 0.4f)), wood * 0.9f);
-                if (st.type == I_SPIKEWALL)
-                    for (int k = 0; k < 8; k++) {
-                        vec3 b(-1.75f + k * 0.5f, 0.6f + (k % 3) * 0.6f, 0.2f);
-                        seg(s, MESH_CONE, root, b, b + vec3(0, 0.3f, 1.2f), 0.13f, vec3(0.6f, 0.5f, 0.36f));
-                        seg(s, MESH_CONE, root, b - vec3(0, 0, 0.4f), b + vec3(0, 0.3f, -1.4f), 0.13f, vec3(0.6f, 0.5f, 0.36f));
-                    }
+                vec3 tint = mixc(vec3(0.45f, 0.4f, 0.38f), vec3(1, 1, 1), dmg);
+                s.inst[st.type == I_SPIKEWALL ? models_.spikeWallMesh : models_.wallMesh].push_back({root, vec4(tint, 1), vec4(0.08f, 5, 0, 0)});
                 break;
             }
             default: break;
@@ -547,14 +529,7 @@ void Game::drawStructures(FrameScene& s) {
 void Game::drawEggs(FrameScene& s) {
     for (const auto& n : nests_) {
         if (!sphereVisible(n.pos, 3)) continue;
-        mat4 root = translate(n.pos);
-        for (int k = 0; k < 14; k++) {
-            float a = k * TAU / 14;
-            vec3 p(std::sin(a) * 1.1f, 0.2f + (k % 2) * 0.12f, std::cos(a) * 1.1f);
-            seg(s, MESH_CYL, root, p - vec3(std::cos(a), 0, -std::sin(a)) * 0.55f, p + vec3(std::cos(a), 0.1f, -std::sin(a)) * 0.55f, 0.1f,
-                vec3(0.33f, 0.23f, 0.14f));
-        }
-        ell(s, root, vec3(0, 0.08f, 0), vec3(1.8f, 0.2f, 1.8f), vec3(0.4f, 0.32f, 0.2f));
+        s.inst[models_.nestMesh].push_back({translate(n.pos) * rotateY(n.pos.x), vec4(1, 1, 1, 1), vec4(0.05f, 5, 0, 0)});
     }
     for (const auto& e : eggs_) {
         if (!e.alive || !sphereVisible(e.pos, 2)) continue;

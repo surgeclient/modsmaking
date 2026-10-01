@@ -52,6 +52,9 @@ void addCone(MeshData& m, vec3 base, vec3 tip, float r, vec3 color, int bone, fl
 void addCylinder(MeshData& m, vec3 a, vec3 b, float ra, float rb, vec3 color, int bone, int segs = 8, float sway = 0);
 // Double-sided flat polygon (convex fan), e.g. wing membranes and leaves.
 void addPolygon(MeshData& m, const std::vector<vec3>& pts, vec3 color, int bone, float emissive = 0, float sway = 0, float thickness = 0.01f);
+// Alpha-cut card (leaves, needles, fronds, feathers): quad p0..p3 with uvs, a shading normal and a card type.
+void addCard(MeshData& m, vec3 p0, vec3 p1, vec3 p2, vec3 p3, vec2 uv0, vec2 uv1, vec2 uv2, vec2 uv3, vec3 normal, vec3 color, float type, int bone,
+             float sway = 0, float ao = 1, float emissive = 0);
 // Hexagonal crystal prism with a pointed tip.
 void addCrystal(MeshData& m, vec3 base, vec3 dir, float r, float len, vec3 color, float emissive);
 

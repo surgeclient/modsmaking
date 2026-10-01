@@ -22,5 +22,5 @@ void main() {
     col += vColor * S.sunColor.rgb * back * sh * 0.8 * vT;
     col += pointLights(vWorld, n, vColor);
     col = applyFog(col, vWorld);
-    outColor = vec4(col, 1.0);
+    outColor = vec4(col, length(S.camPos.xyz - vWorld));
 }

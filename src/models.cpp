@@ -33,6 +33,25 @@ struct Frame3 {
     vec3 operator()(float a, float b, float c) const { return o + x * a + y * b + z * c; }
 };
 
+void featherCard(MeshData& md, vec3 root, vec3 tip, float fw, vec3 col, int bone, float emissive) {
+    vec3 dir = normalize(tip - root);
+    vec3 lat = normalize(cross(vec3(0, 1, 0), dir));
+    if (length(lat) < 0.1f) lat = vec3(1, 0, 0);
+    vec3 n = normalize(cross(dir, lat));
+    if (n.y < 0) n = -n;
+    addCard(md, root - lat * fw, root + lat * fw, tip + lat * fw, tip - lat * fw, vec2(0, 0), vec2(1, 0), vec2(1, 1), vec2(0, 1), n, col, 4.0f, bone, 0, 1,
+            emissive);
+}
+
+// Glossy eye with a bright catchlight so creatures look alive.
+void addEye(MeshData& md, vec3 c, float r, vec3 col, vec3 outward, int bone, float emissive) {
+    size_t first = md.v.size();
+    addSphere(md, c, vec3(r, r, r), col, bone, emissive, 10);
+    for (size_t i = first; i < md.v.size(); i++) md.v[i].sway = 1.0f;  // per-vertex gloss on skinned meshes
+    vec3 o = normalize(outward);
+    addSphere(md, c + o * r * 0.8f + vec3(0, r * 0.35f, 0), vec3(r * 0.22f, r * 0.22f, r * 0.22f), vec3(1, 1, 1), bone, 1.2f, 6);
+}
+
 void addWing(MeshData& md, SdfModel& m, Rig& rig, int wi, int side, vec3 S, float span, float chord, vec3 boneCol, vec3 skinCol, bool feathered,
              float emissive, float armR) {
     vec3 E = S + vec3(side * span * 0.5f, span * 0.04f, -chord * 0.05f);
@@ -57,29 +76,28 @@ void addWing(MeshData& md, SdfModel& m, Rig& rig, int wi, int side, vec3 S, floa
     } else {
         addPolygon(md, {E, T, E + vec3(side * span * 0.3f, 0, -chord * 0.85f), E + vec3(0, 0, -chord * 0.95f)}, skinCol, wout, emissive);
         // Primary feathers fanning out from the wing tip.
-        for (int f = 0; f < 7; f++) {
-            float t = 0.15f + f * 0.13f;
-            vec3 root = lerp(E, T, t) + vec3(0, 0.005f * f, -chord * 0.25f);
+        for (int f = 0; f < 10; f++) {
+            float t = 0.1f + f * 0.095f;
+            vec3 root = lerp(E, T, t) + vec3(0, 0.004f * f, -chord * 0.22f);
             float back = 1.0f - t * 0.6f;
-            vec3 dir = normalize(vec3(side * (0.25f + t * 0.9f), -0.02f, -back));
-            float len = chord * (0.55f + t * 0.35f);
-            vec3 lat = normalize(cross(vec3(0, 1, 0), dir));
-            float fw = chord * 0.09f;
-            vec3 tip = root + dir * len;
-            vec3 col = mixc(skinCol, boneCol, f % 2 ? 0.0f : 0.15f) * (0.9f + 0.03f * f);
-            addPolygon(md, {root - lat * fw, root + lat * fw, tip + lat * fw * 0.6f, tip, tip - lat * fw * 0.6f}, col, wout,
-                       emissive * (0.6f + t), 0, 0.008f);
+            vec3 dir = normalize(vec3(side * (0.25f + t * 0.95f), -0.02f, -back));
+            float len = chord * (0.55f + t * 0.4f);
+            vec3 col = mixc(skinCol, boneCol, f % 2 ? 0.0f : 0.18f) * (0.88f + 0.025f * f);
+            featherCard(md, root, root + dir * len, chord * 0.13f, col, wout, emissive * (0.6f + t));
         }
         // Secondary feathers along the inner trailing edge.
-        for (int f = 0; f < 5; f++) {
-            float t = f / 4.0f;
-            vec3 root = lerp(S, E, t) + vec3(0, -0.004f, -chord * 0.55f);
-            vec3 dir = normalize(vec3(side * 0.12f, -0.02f, -1.0f));
-            vec3 lat = normalize(cross(vec3(0, 1, 0), dir));
-            float fw = chord * 0.1f;
-            vec3 tip = root + dir * chord * 0.5f;
-            addPolygon(md, {root - lat * fw, root + lat * fw, tip + lat * fw * 0.6f, tip, tip - lat * fw * 0.6f}, skinCol * 0.93f, win, emissive * 0.4f, 0,
-                       0.008f);
+        for (int f = 0; f < 8; f++) {
+            float t = f / 7.0f;
+            vec3 root = lerp(S, E, t) + vec3(0, -0.004f, -chord * 0.5f);
+            vec3 dir = normalize(vec3(side * 0.12f * t, -0.02f, -1.0f));
+            featherCard(md, root, root + dir * chord * 0.55f, chord * 0.12f, skinCol * (0.9f + 0.04f * (f % 2)), win, emissive * 0.4f);
+        }
+        // Coverts: a row of short feathers over the wing.
+        for (int f = 0; f < 9; f++) {
+            float t = f / 8.0f;
+            vec3 root = lerp(S, T, t * 0.85f) + vec3(0, 0.012f, -chord * 0.08f);
+            vec3 dir = normalize(vec3(side * 0.2f, -0.05f, -1.0f));
+            featherCard(md, root, root + dir * chord * 0.42f, chord * 0.1f, mixc(skinCol, boneCol, 0.3f), t < 0.55f ? win : wout, emissive * 0.3f);
         }
     }
 }
@@ -87,7 +105,7 @@ void addWing(MeshData& md, SdfModel& m, Rig& rig, int wi, int side, vec3 S, floa
 void buildQuad(int sId, Rig& rig, MeshData& md) {
     const Species& sp = SPECIES[sId];
     float L = sp.bodyL, W = sp.bodyW, H = sp.bodyH, legL = sp.legL, legT = sp.legT, hs = sp.headS;
-    float vox = std::max(L, W * 1.5f) / 30.0f;
+    float vox = std::max(L, W * 1.5f) / 40.0f;
     float minR = vox * 1.3f;
     float bodyY = legL + H * 0.45f;
     vec3 c1 = sp.c1, c2 = sp.c2, c3 = sp.c3;
@@ -178,7 +196,10 @@ void buildQuad(int sId, Rig& rig, MeshData& md) {
         }
         float eyeE = sp.glowEyes ? 1.6f : 0.0f;
         vec3 eyeCol = sp.glowEyes ? c3 : vec3(0.03f, 0.025f, 0.02f);
-        for (int s = -1; s <= 1; s += 2) addSphere(md, F(s * hs * 0.34f, hs * 0.15f, hs * (sp.beak ? 0.28f : 0.38f)), vec3(hs * 0.1f, hs * 0.1f, hs * 0.1f), eyeCol, hd, eyeE, 8);
+        for (int s = -1; s <= 1; s += 2) {
+            vec3 ec = F(s * hs * 0.34f, hs * 0.15f, hs * (sp.beak ? 0.28f : 0.38f));
+            addEye(md, ec, hs * 0.1f, eyeCol, ec - hc, hd, eyeE);
+        }
         if (sp.horns == 1) {
             addCone(md, F(0, hs * 0.32f, hs * 0.36f), F(0, hs * 1.4f, hs * 1.05f), hs * 0.13f, c3, hd, sp.glow, 10);
         } else if (sp.horns > 1) {
@@ -306,7 +327,7 @@ void buildQuad(int sId, Rig& rig, MeshData& md) {
 void buildBird(int sId, Rig& rig, MeshData& md) {
     const Species& sp = SPECIES[sId];
     float L = sp.bodyL, W = sp.bodyW, H = sp.bodyH, legL = sp.legL, hs = sp.headS;
-    float vox = std::max(L, W * 1.5f) / 30.0f;
+    float vox = std::max(L, W * 1.5f) / 40.0f;
     float bodyY = legL + H * 0.5f;
     vec3 c1 = sp.c1, c2 = sp.c2, c3 = sp.c3;
     float bodyGlow = sId == S_PHOENIX ? 0.35f : 0.0f;
@@ -354,9 +375,10 @@ void buildBird(int sId, Rig& rig, MeshData& md) {
     addCone(md, hc + vec3(0, hs * 0.08f, hs * 0.36f), hc + vec3(0, -hs * 0.32f, hs * 1.2f), hs * 0.22f, c3, hd, 0, 10);
     addCone(md, hc + vec3(0, -hs * 0.12f, hs * 0.36f), hc + vec3(0, -hs * 0.2f, hs * 0.9f), hs * 0.12f, c3 * 0.85f, jw, 0, 8);
     float eyeE = sp.glowEyes ? 1.6f : 0.0f;
-    for (int s = -1; s <= 1; s += 2)
-        addSphere(md, hc + vec3(s * hs * 0.32f, hs * 0.12f, hs * 0.28f), vec3(hs * 0.1f, hs * 0.1f, hs * 0.1f), sp.glowEyes ? c3 : vec3(0.03f, 0.03f, 0.02f), hd,
-                  eyeE, 8);
+    for (int s = -1; s <= 1; s += 2) {
+        vec3 ec = hc + vec3(s * hs * 0.32f, hs * 0.12f, hs * 0.28f);
+        addEye(md, ec, hs * 0.1f, sp.glowEyes ? c3 : vec3(0.03f, 0.03f, 0.02f), ec - hc, hd, eyeE);
+    }
     if (sId == S_PHOENIX || sId == S_THUNDERBIRD)
         for (int k = 0; k < 4; k++)
             addCone(md, hc + vec3(0, hs * 0.35f, -k * hs * 0.18f), hc + vec3(0, hs * (1.2f - k * 0.15f), -hs * (0.55f + k * 0.3f)), hs * 0.14f, c3, hd, sp.glow, 6);
@@ -365,17 +387,13 @@ void buildBird(int sId, Rig& rig, MeshData& md) {
     rig.tailSegs = 1;
     int tb = addBone(rig, body, vec3(0, bodyY, -L * 0.5f));
     rig.tail[0][0] = tb;
-    for (int k = -2; k <= 2; k++) {
-        float a = k * 0.22f;
+    for (int k = -3; k <= 3; k++) {
+        float a = k * 0.17f;
         vec3 root(0, bodyY - H * 0.05f, -L * 0.5f);
         vec3 d = normalize(vec3(std::sin(a), -0.15f, -std::cos(a)));
-        vec3 lat = normalize(cross(vec3(0, 1, 0), d));
         float len = sp.tailL * (1.0f - std::fabs((float)k) * 0.12f);
-        float fw = L * 0.08f;
-        vec3 tip = root + d * len;
         vec3 col = (k % 2) ? c2 : c3;
-        addPolygon(md, {root - lat * fw * 0.6f, root + lat * fw * 0.6f, tip + lat * fw, tip + d * fw, tip - lat * fw}, col, tb,
-                   sId == S_PHOENIX ? 1.2f : (sId == S_THUNDERBIRD ? 0.3f : 0.0f), 0, 0.01f);
+        featherCard(md, root, root + d * len, L * 0.11f, col, tb, sId == S_PHOENIX ? 1.2f : (sId == S_THUNDERBIRD ? 0.3f : 0.0f));
     }
     rig.wings = true;
     float span = L * 1.6f, chord = L * 0.55f;
@@ -486,6 +504,11 @@ void buildHumanoid(int kind, Rig& rig, MeshData& md) {
     if (!inf) {
         P(ellipsoid({0, 1.88f, -0.015f}, {0.114f, 0.105f, 0.125f}, hair, head, 0.02f));
         P(ellipsoid({0, 1.0f, 0}, {0.195f, 0.035f, 0.135f}, vec3(0.25f, 0.15f, 0.08f), pelvis, 0.01f));
+        for (int sd = -1; sd <= 1; sd += 2) {
+            addSphere(md, {sd * 0.042f, 1.848f, 0.105f}, {0.017f, 0.014f, 0.01f}, {0.92f, 0.92f, 0.9f}, head, 0, 8);
+            addEye(md, {sd * 0.042f, 1.848f, 0.113f}, 0.008f, {0.15f, 0.25f, 0.35f}, {0, 0, 1}, head, 0);
+            P(capsule({sd * 0.07f, 1.885f, 0.1f}, {sd * 0.02f, 1.89f, 0.115f}, 0.009f, 0.007f, hair, head, 0.005f));  // brows
+        }
         P(ellipsoid({0, 1.25f, 0.05f}, {0.17f, 0.24f, 0.09f}, cloth, torso, 0.03f));  // tunic front
     } else {
         P(ellipsoid({0, 0.9f, 0}, {0.2f * bulk, 0.16f, 0.14f * bulk}, cloth, pelvis, 0.03f));  // loincloth
@@ -545,7 +568,7 @@ void buildHumanoid(int kind, Rig& rig, MeshData& md) {
         m.colorFn = [](vec3, vec3, vec3 c, float ao) { return c * (0.7f + 0.3f * ao); };
     }
     m.colorSharpness = 2.0f;
-    buildSdf(m, 0.017f, md);
+    buildSdf(m, 0.0135f, md);
     rig.seatY = 0;
 }
 
@@ -554,54 +577,109 @@ void buildHumanoid(int kind, Rig& rig, MeshData& md) {
 // ---------------------------------------------------------------------------
 vec3 jitterColor(vec3 c, Rng& r, float amt) { return c * vec3(1 + r.range(-amt, amt), 1 + r.range(-amt, amt), 1 + r.range(-amt, amt)); }
 
+// Scatter alpha-cut leaf cards over an ellipsoidal canopy blob.
+void leafCards(MeshData& md, Rng& r, vec3 c, vec3 radii, int count, float size, vec3 leaf, float type, float swayBase) {
+    for (int k = 0; k < count; k++) {
+        vec3 d = normalize(vec3(r.range(-1, 1), r.range(-0.6f, 1.0f), r.range(-1, 1)));
+        vec3 pos = c + d * radii * r.range(0.72f, 1.05f);
+        vec3 nrm = normalize(d + vec3(0, 0.35f, 0));
+        // Random orientation around the outward direction, tilted for a natural look.
+        vec3 t0 = normalize(cross(nrm, std::fabs(nrm.y) < 0.9f ? vec3(0, 1, 0) : vec3(1, 0, 0)));
+        vec3 t1 = cross(nrm, t0);
+        float a = r.range(0, TAU);
+        vec3 right = t0 * std::cos(a) + t1 * std::sin(a);
+        vec3 up = normalize(cross(right, nrm) * 0.8f + nrm * r.range(-0.5f, 0.5f));
+        right = normalize(cross(nrm, up));
+        float sz = size * r.range(0.75f, 1.25f);
+        vec3 col = leaf * r.range(0.82f, 1.15f);
+        col = col * vec3(r.range(0.95f, 1.08f), 1.0f, r.range(0.9f, 1.05f));
+        float ao = clampf(0.55f + 0.45f * (d.y * 0.5f + 0.5f), 0.5f, 1.0f);
+        float sway = swayBase * smoothstep(1.0f, 4.0f, pos.y);
+        addCard(md, pos - right * sz - up * sz, pos + right * sz - up * sz, pos + right * sz + up * sz, pos - right * sz + up * sz, vec2(0, 0), vec2(1, 0),
+                vec2(1, 1), vec2(0, 1), nrm, col, type, 0, sway, ao);
+    }
+}
+
+// Long card from 'base' along 'dir' (u across, v along), used for sprigs and fronds.
+void stripCard(MeshData& md, vec3 base, vec3 dir, float len, float width, vec3 col, float type, float sway, float ao, vec2 vRange = vec2(0, 1)) {
+    vec3 d = normalize(dir);
+    vec3 lat = normalize(cross(vec3(0, 1, 0), d));
+    if (length(lat) < 0.1f) lat = vec3(1, 0, 0);
+    vec3 n = normalize(cross(d, lat));
+    if (n.y < 0) n = -n;
+    vec3 tip = base + d * len;
+    addCard(md, base - lat * width, base + lat * width, tip + lat * width, tip - lat * width, vec2(0, vRange.x), vec2(1, vRange.x), vec2(1, vRange.y),
+            vec2(0, vRange.y), normalize(n + vec3(0, 0.4f, 0)), col, type, 0, sway, ao);
+}
+
 void buildTree(PropType type, int variant, float vox, MeshData& md) {
+    bool low = vox > 0.3f;
     Rng r(1000 + type * 37 + variant * 101);
     SdfModel m;
     m.seed = 900 + type * 7 + variant;
-    vec3 bark(0.33f, 0.23f, 0.15f);
+    vec3 bark(0.29f, 0.23f, 0.17f);
+    struct Blob {
+        vec3 c, r;
+    };
+    std::vector<Blob> blobs;
+    vec3 leaf(0.26f, 0.45f, 0.16f);
     switch (type) {
         case P_OAK: {
-            vec3 leaf = jitterColor(vec3(0.27f, 0.47f, 0.17f), r, 0.12f);
+            leaf = jitterColor(vec3(0.27f, 0.46f, 0.16f), r, 0.12f);
             m.prims.push_back(capsule({0, -0.8f, 0}, {r.range(-0.2f, 0.2f), 3.0f, r.range(-0.2f, 0.2f)}, 0.45f, 0.28f, bark, 0, 0.3f));
             for (int k = 0; k < 4; k++) {
                 float a = k * TAU / 4 + r.range(-0.4f, 0.4f);
                 vec3 root(std::sin(a) * 0.3f, 0.1f, std::cos(a) * 0.3f);
                 m.prims.push_back(capsule(root, root + vec3(std::sin(a) * 0.9f, -0.6f, std::cos(a) * 0.9f), 0.22f, 0.08f, bark, 0, 0.2f));
             }
-            int blobs = 7 + variant;
-            for (int k = 0; k < blobs; k++) {
+            int n = 6 + variant;
+            for (int k = 0; k < n; k++) {
                 float a = r.range(0, TAU), d = r.range(0.4f, 1.9f);
                 vec3 c(std::sin(a) * d, r.range(3.9f, 5.6f), std::cos(a) * d);
-                float rad = r.range(1.3f, 2.0f);
-                m.prims.push_back(capsule({0, 2.4f, 0}, c * 0.7f + vec3(0, 0.5f, 0), 0.2f, 0.12f, bark, 0, 0.15f));
-                Prim p = ellipsoid(c, {rad, rad * 0.85f, rad}, jitterColor(leaf, r, 0.1f), 0, 0.5f);
-                p.disp = 0.5f;
-                p.dispFreq = 1.3f;
+                float rad = r.range(1.3f, 1.9f);
+                m.prims.push_back(capsule({0, 2.4f, 0}, c * 0.7f + vec3(0, 0.5f, 0), 0.2f, 0.1f, bark, 0, 0.15f));
+                Prim p = ellipsoid(c, vec3(rad, rad * 0.8f, rad) * 0.72f, leaf * 0.55f, 0, 0.4f);
+                p.disp = 0.3f;
+                p.dispFreq = 1.4f;
                 m.prims.push_back(p);
+                blobs.push_back({c, vec3(rad, rad * 0.82f, rad)});
             }
             break;
         }
         case P_PINE:
         case P_SNOWPINE: {
-            vec3 needle = jitterColor(vec3(0.13f, 0.29f, 0.17f), r, 0.1f);
-            m.prims.push_back(capsule({0, -0.6f, 0}, {0, 8.0f, 0}, 0.32f, 0.06f, bark, 0, 0.1f));
+            vec3 needle = jitterColor(vec3(0.12f, 0.27f, 0.16f), r, 0.08f);
+            m.prims.push_back(capsule({0, -0.6f, 0}, {0, 8.2f, 0}, 0.32f, 0.06f, bark, 0, 0.1f));
             for (int k = 0; k < 5; k++) {
                 float y0 = 1.5f + k * 1.25f;
-                float R = 2.4f - k * 0.4f + r.range(-0.15f, 0.15f);
-                Prim tier = capsule({0, y0, 0}, {0, y0 + 2.1f, 0}, R, 0.08f, jitterColor(needle, r, 0.06f), 0, 0.1f);
-                tier.disp = 0.22f;
-                tier.dispFreq = 2.2f;
+                float R = (2.3f - k * 0.4f) * 0.55f;
+                Prim tier = capsule({0, y0 + 0.2f, 0}, {0, y0 + 1.9f, 0}, R, 0.06f, needle * 0.6f, 0, 0.1f);
+                tier.disp = 0.12f;
+                tier.dispFreq = 2.5f;
                 m.prims.push_back(tier);
             }
-            if (type == P_SNOWPINE)
-                m.colorFn = [](vec3 p, vec3 n, vec3 c, float ao) {
-                    float snow = smoothstep(0.35f, 0.65f, n.y + noise3(p * 2.0f, 4) * 0.25f) * smoothstep(1.0f, 1.8f, p.y);
-                    return lerp(c, vec3(0.92f, 0.95f, 1.0f), snow) * (0.6f + 0.4f * ao);
-                };
+            // Drooping needle sprigs on every tier.
+            for (int k = 0; k < 5; k++) {
+                float y0 = 1.5f + k * 1.25f;
+                float R = 2.4f - k * 0.4f;
+                int n = (int)((low ? 9.0f : 26.0f) * R);
+                for (int i = 0; i < n; i++) {
+                    float a = r.range(0, TAU), t = r.range(0.0f, 0.85f);
+                    float rad = R * (1.0f - t) * r.range(0.3f, 0.85f);
+                    vec3 outward(std::cos(a), 0, std::sin(a));
+                    vec3 base = vec3(0, y0 + t * 2.0f, 0) + outward * rad * 0.35f;
+                    vec3 dir = outward + vec3(0, -0.45f + r.range(-0.15f, 0.2f), 0);
+                    float len = std::max(0.5f, R * (1.0f - t) * r.range(0.7f, 1.0f));
+                    vec3 col = needle * r.range(0.85f, 1.2f);
+                    if (type == P_SNOWPINE && r.chance(0.55f)) col = lerp(col, vec3(0.9f, 0.93f, 0.98f), r.range(0.5f, 0.9f));
+                    stripCard(md, base, dir, len * (low ? 1.3f : 1.0f), (low ? 0.38f : 0.28f) * (0.7f + 0.3f * (1 - t)), col, 2.0f,
+                              smoothstep(1.0f, 7.0f, base.y) * 0.6f, 0.6f + 0.4f * t);
+                }
+            }
             break;
         }
         case P_JUNGLETREE: {
-            vec3 leaf = jitterColor(vec3(0.14f, 0.44f, 0.16f), r, 0.12f);
+            leaf = jitterColor(vec3(0.14f, 0.42f, 0.15f), r, 0.12f);
             m.prims.push_back(capsule({0, -0.6f, 0}, {r.range(-0.4f, 0.4f), 9.0f, r.range(-0.4f, 0.4f)}, 0.55f, 0.3f, bark * 1.1f, 0, 0.3f));
             for (int k = 0; k < 5; k++) {
                 float a = k * TAU / 5 + r.range(-0.3f, 0.3f);
@@ -609,11 +687,18 @@ void buildTree(PropType type, int variant, float vox, MeshData& md) {
             }
             for (int k = 0; k < 5; k++) {
                 float a = r.range(0, TAU), d = r.range(0.5f, 2.6f);
-                Prim p = ellipsoid({std::sin(a) * d, r.range(8.6f, 10.2f), std::cos(a) * d}, {r.range(2.4f, 3.4f), r.range(1.0f, 1.5f), r.range(2.4f, 3.4f)},
-                                   jitterColor(leaf, r, 0.1f), 0, 0.6f);
-                p.disp = 0.45f;
+                vec3 c(std::sin(a) * d, r.range(8.6f, 10.2f), std::cos(a) * d);
+                vec3 rad(r.range(2.4f, 3.4f), r.range(1.0f, 1.5f), r.range(2.4f, 3.4f));
+                Prim p = ellipsoid(c, rad * 0.7f, leaf * 0.55f, 0, 0.5f);
+                p.disp = 0.35f;
                 p.dispFreq = 1.4f;
                 m.prims.push_back(p);
+                blobs.push_back({c, rad});
+            }
+            for (int k = 0; k < 6; k++) {  // hanging vines
+                float a = r.range(0, TAU), d = r.range(1.5f, 3.0f);
+                vec3 top(std::sin(a) * d, 8.6f, std::cos(a) * d);
+                addCylinder(md, top, top + vec3(0, -r.range(2.5f, 5.0f), 0), 0.04f, 0.02f, vec3(0.2f, 0.35f, 0.15f), 0, 4, 0.8f);
             }
             break;
         }
@@ -622,20 +707,27 @@ void buildTree(PropType type, int variant, float vox, MeshData& md) {
             m.prims.push_back(capsule({0, -0.6f, 0}, {0.3f, 4.8f, 0}, 0.38f, 0.12f, c, 0, 0.2f));
             for (int k = 0; k < 4; k++) {
                 float a = r.range(0, TAU), y = r.range(2.0f, 4.0f);
-                m.prims.push_back(capsule({0.1f, y, 0}, {std::sin(a) * 1.6f, y + r.range(0.6f, 1.5f), std::cos(a) * 1.6f}, 0.14f, 0.04f, c, 0, 0.1f));
+                vec3 b0(0.1f, y, 0), b1(std::sin(a) * 1.6f, y + r.range(0.6f, 1.5f), std::cos(a) * 1.6f);
+                m.prims.push_back(capsule(b0, b1, 0.14f, 0.04f, c, 0, 0.1f));
+                m.prims.push_back(capsule(b1, b1 + vec3(std::sin(a + 0.8f) * 0.6f, 0.5f, std::cos(a + 0.8f) * 0.6f), 0.05f, 0.02f, c, 0, 0.05f));
             }
             break;
         }
         default: break;
     }
-    if (!m.colorFn)
-        m.colorFn = [](vec3 p, vec3 n, vec3 c, float ao) {
-            float v = noise3(p * 0.8f, 11) * 0.15f;
-            c = c * (1.0f + v) * lerpf(0.85f, 1.15f, smoothstep(-0.3f, 0.8f, n.y));
-            return c * (0.45f + 0.55f * ao);
-        };
+    m.colorFn = [](vec3 p, vec3 n, vec3 c, float ao) {
+        float v = noise3(p * 0.8f, 11) * 0.15f;
+        float streak = noise3(vec3(p.x * 6.0f, p.y * 0.8f, p.z * 6.0f), 5) * 0.2f;  // bark fibres
+        c = c * (1.0f + v + streak) * lerpf(0.85f, 1.15f, smoothstep(-0.3f, 0.8f, n.y));
+        return c * (0.4f + 0.6f * ao);
+    };
     m.swayFn = [](vec3 p) { return smoothstep(1.2f, 6.0f, p.y); };
     buildSdf(m, vox, md);
+    float cardSize = type == P_JUNGLETREE ? 0.85f : 0.62f;
+    for (const auto& b : blobs) {
+        int count = (int)(b.r.x * b.r.z * (low ? 4.0f : 14.0f));
+        leafCards(md, r, b.c, b.r, count, cardSize * (low ? 1.7f : 1.0f), leaf, 1.0f, 1.0f);
+    }
 }
 
 void buildPalm(int variant, MeshData& md, bool lowDetail) {
@@ -651,25 +743,23 @@ void buildPalm(int variant, MeshData& md, bool lowDetail) {
         prev = nx;
     }
     top = prev;
+    m.prims.push_back(ellipsoid(top + vec3(0, 0.1f, 0), {0.35f, 0.3f, 0.35f}, vec3(0.3f, 0.32f, 0.15f), 0, 0.1f));
     m.colorFn = [](vec3 p, vec3, vec3 c, float ao) { return c * (0.8f + 0.2f * std::sin(p.y * 9.0f)) * (0.6f + 0.4f * ao); };
     m.swayFn = [](vec3 p) { return smoothstep(2.0f, 7.0f, p.y) * 0.5f; };
-    buildSdf(m, lowDetail ? 0.18f : 0.07f, md);
-    int fronds = 9;
+    buildSdf(m, lowDetail ? 0.18f : 0.06f, md);
+    int fronds = 11;
     for (int f = 0; f < fronds; f++) {
         float a = f * TAU / fronds + r.range(-0.2f, 0.2f);
+        float rise = r.range(0.2f, 0.9f);
         vec3 dir(std::sin(a), 0, std::cos(a));
-        vec3 lat(dir.z, 0, -dir.x);
-        vec3 p0 = top;
-        int segs = lowDetail ? 3 : 6;
-        for (int s = 0; s < segs; s++) {
-            float t0 = (float)s / segs, t1 = (float)(s + 1) / segs;
-            auto pt = [&](float t) { return top + dir * (t * 3.6f) + vec3(0, 0.6f * t - 2.2f * t * t, 0); };
+        int segs = lowDetail ? 3 : 7;
+        auto pt = [&](float t) { return top + dir * (t * 3.8f) + vec3(0, rise * t - 2.4f * t * t, 0); };
+        for (int sg = 0; sg < segs; sg++) {
+            float t0 = (float)sg / segs, t1 = (float)(sg + 1) / segs;
             vec3 a0 = pt(t0), a1 = pt(t1);
-            float w0 = 0.55f * std::sin(t0 * PI * 0.9f + 0.15f), w1 = 0.55f * std::sin(t1 * PI * 0.9f + 0.15f);
-            vec3 col = vec3(0.24f, 0.5f, 0.17f) * (0.9f + 0.2f * t0);
-            addPolygon(md, {a0 - lat * w0 - vec3(0, w0 * 0.3f, 0), a1 - lat * w1 - vec3(0, w1 * 0.3f, 0), a1, a0}, col, 0, 0, 0.6f + t0, 0.01f);
-            addPolygon(md, {a0, a1, a1 + lat * w1 - vec3(0, w1 * 0.3f, 0), a0 + lat * w0 - vec3(0, w0 * 0.3f, 0)}, col * 0.95f, 0, 0, 0.6f + t0, 0.01f);
-            p0 = a1;
+            float w = 0.75f;
+            vec3 col = vec3(0.22f, 0.46f, 0.15f) * (0.85f + 0.3f * t0) * r.range(0.9f, 1.1f);
+            stripCard(md, a0, a1 - a0, length(a1 - a0) * 1.02f, w, col, 3.0f, 0.5f + t0, 0.7f + 0.3f * t0, vec2(t0, t1));
         }
     }
     for (int k = 0; k < 4; k++) addSphere(md, top + vec3(std::sin(k * 1.7f) * 0.3f, -0.35f, std::cos(k * 1.7f) * 0.3f), {0.2f, 0.22f, 0.2f}, {0.35f, 0.25f, 0.12f}, 0, 0, 8);
@@ -723,9 +813,10 @@ void buildPlant(PropType type, int variant, bool low, MeshData& md) {
                 p.dispFreq = 4.0f;
                 m.prims.push_back(p);
             }
-            m.colorFn = [](vec3 p, vec3 n, vec3 c, float ao) { return c * (0.8f + 0.4f * noise3(p * 4.0f, 7)) * (0.5f + 0.5f * ao); };
+            m.colorFn = [](vec3 p, vec3 n, vec3 c, float ao) { return c * (0.8f + 0.4f * noise3(p * 4.0f, 7)) * (0.45f + 0.55f * ao); };
             m.swayFn = [](vec3 p) { return smoothstep(0.2f, 1.0f, p.y) * 0.4f; };
             buildSdf(m, low ? 0.12f : 0.05f, md);
+            leafCards(md, r, vec3(0, 0.6f, 0), vec3(0.85f, 0.55f, 0.85f), low ? 8 : 34, low ? 0.4f : 0.26f, leaf * 1.2f, 1.0f, 0.5f);
             vec3 berry = type == P_EMBERBUSH ? vec3(0.95f, 0.12f, 0.08f) : vec3(0.65f, 0.3f, 0.95f);
             int n = low ? 8 : 22;
             for (int k = 0; k < n; k++) {
@@ -747,16 +838,15 @@ void buildPlant(PropType type, int variant, bool low, MeshData& md) {
                 addSphere(md, vec3(std::sin(k * 2.1f) * 0.12f, 0.6f + k * 0.08f, std::cos(k * 2.1f) * 0.12f), vec3(0.06f, 0.06f, 0.06f), vec3(0.5f, 0.9f, 1.0f), 0, 3.0f, 6);
             break;
         case P_FERN:
-            for (int f = 0; f < 7; f++) {
-                float a = f * TAU / 7 + r.range(-0.3f, 0.3f);
-                vec3 dir(std::sin(a), 0, std::cos(a)), lat(dir.z, 0, -dir.x);
+            for (int f = 0; f < 9; f++) {
+                float a = f * TAU / 9 + r.range(-0.3f, 0.3f);
+                vec3 dir(std::sin(a), 0, std::cos(a));
                 int segs = low ? 2 : 5;
-                for (int s = 0; s < segs; s++) {
-                    float t0 = (float)s / segs, t1 = (float)(s + 1) / segs;
-                    auto pt = [&](float t) { return dir * (t * 1.1f) + vec3(0, 0.75f * t - 0.6f * t * t, 0); };
-                    float w0 = 0.2f * std::sin(t0 * PI * 0.9f + 0.2f), w1 = 0.2f * std::sin(t1 * PI * 0.9f + 0.2f);
-                    addPolygon(md, {pt(t0) - lat * w0, pt(t1) - lat * w1, pt(t1) + lat * w1, pt(t0) + lat * w0}, vec3(0.2f, 0.45f + 0.1f * t0, 0.15f), 0, 0,
-                               0.8f * t0, 0.005f);
+                auto pt = [&](float t) { return dir * (t * 1.2f) + vec3(0, 0.85f * t - 0.7f * t * t, 0); };
+                for (int sg = 0; sg < segs; sg++) {
+                    float t0 = (float)sg / segs, t1 = (float)(sg + 1) / segs;
+                    vec3 a0 = pt(t0), a1 = pt(t1);
+                    stripCard(md, a0, a1 - a0, length(a1 - a0) * 1.03f, 0.24f, vec3(0.2f, 0.45f + 0.1f * t0, 0.15f), 3.0f, 0.8f * t0, 0.6f + 0.4f * t0, vec2(t0, t1));
                 }
             }
             break;
@@ -797,6 +887,151 @@ void buildPlant(PropType type, int variant, bool low, MeshData& md) {
         }
         default: break;
     }
+}
+
+
+void buildStructures(ModelLibrary& lib, Renderer& r, std::function<int(MeshData&)> upload) {
+    Rng rng(555);
+    // Campfire: ring of rough stones, charred crossed logs and a glowing ember bed.
+    {
+        SdfModel m;
+        m.seed = 61;
+        for (int k = 0; k < 10; k++) {
+            float a = k * TAU / 10 + rng.range(-0.1f, 0.1f);
+            Prim p = ellipsoidRot({std::sin(a) * 0.8f, 0.12f, std::cos(a) * 0.8f}, {rng.range(0.2f, 0.27f), rng.range(0.14f, 0.2f), rng.range(0.18f, 0.24f)}, a, 0, 0,
+                                  jitterColor({0.42f, 0.4f, 0.38f}, rng, 0.08f), 0, 0.04f);
+            p.disp = 0.05f;
+            p.dispFreq = 6.0f;
+            m.prims.push_back(p);
+        }
+        m.prims.push_back(ellipsoid({0, 0.02f, 0}, {0.65f, 0.08f, 0.65f}, {0.12f, 0.1f, 0.09f}, 0, 0.1f));
+        vec3 bark(0.28f, 0.18f, 0.1f);
+        for (int k = 0; k < 4; k++) {
+            float a = k * TAU / 4 + 0.4f;
+            vec3 outer(std::sin(a) * 0.62f, 0.08f, std::cos(a) * 0.62f);
+            Prim lg = capsule(outer, {std::sin(a) * 0.08f, 0.45f, std::cos(a) * 0.08f}, 0.09f, 0.07f, bark, 0, 0.03f);
+            m.prims.push_back(lg);
+        }
+        for (int k = 0; k < 5; k++) {
+            Prim e = ellipsoid({rng.range(-0.25f, 0.25f), 0.08f, rng.range(-0.25f, 0.25f)}, {0.12f, 0.06f, 0.12f}, {1.0f, 0.35f, 0.08f}, 0, 0.05f);
+            e.emissive = 1.6f;
+            m.prims.push_back(e);
+        }
+        m.colorFn = [](vec3 p, vec3 n, vec3 c, float ao) {
+            float char_ = smoothstep(0.25f, 0.45f, p.y) * smoothstep(0.35f, 0.0f, std::sqrt(p.x * p.x + p.z * p.z));
+            return lerp(c, vec3(0.06f, 0.05f, 0.05f), char_ * 0.8f) * (0.5f + 0.5f * ao);
+        };
+        MeshData md;
+        buildSdf(m, 0.025f, md);
+        lib.campfireMesh = upload(md);
+    }
+    // Cauldron: iron pot with a rim, three legs and a glowing brew.
+    {
+        SdfModel m;
+        m.seed = 62;
+        vec3 iron(0.16f, 0.16f, 0.18f);
+        m.prims.push_back(ellipsoid({0, 0.75f, 0}, {0.66f, 0.52f, 0.66f}, iron, 0, 0.05f));
+        Prim inner = ellipsoid({0, 0.82f, 0}, {0.56f, 0.45f, 0.56f}, iron, 0, 0.03f);
+        inner.subtract = true;
+        m.prims.push_back(inner);
+        Prim cut = roundBox({0, 1.35f, 0}, {1, 0.22f, 1}, 0.0f, iron, 0, 0.02f);
+        cut.subtract = true;
+        m.prims.push_back(cut);
+        for (int k = 0; k < 16; k++) {
+            float a0 = k * TAU / 16, a1 = (k + 1) * TAU / 16;
+            m.prims.push_back(capsule({std::sin(a0) * 0.6f, 1.12f, std::cos(a0) * 0.6f}, {std::sin(a1) * 0.6f, 1.12f, std::cos(a1) * 0.6f}, 0.06f, 0.06f, iron * 1.2f, 0, 0.02f));
+        }
+        for (int k = 0; k < 3; k++) {
+            float a = k * TAU / 3;
+            m.prims.push_back(capsule({std::sin(a) * 0.45f, 0.45f, std::cos(a) * 0.45f}, {std::sin(a) * 0.62f, 0.0f, std::cos(a) * 0.62f}, 0.07f, 0.05f, iron, 0, 0.05f));
+        }
+        Prim brew = ellipsoid({0, 1.0f, 0}, {0.55f, 0.05f, 0.55f}, {0.3f, 0.95f, 0.5f}, 0, 0.01f);
+        brew.emissive = 1.3f;
+        m.prims.push_back(brew);
+        m.colorFn = [](vec3 p, vec3, vec3 c, float ao) { return c * (0.85f + 0.3f * noise3(p * 8.0f, 3)) * (0.5f + 0.5f * ao); };
+        MeshData md;
+        buildSdf(m, 0.022f, md);
+        lib.cauldronMesh = upload(md);
+    }
+    // Palisade walls: sharpened logs lashed to two beams (spiked version adds stakes).
+    for (int spiked = 0; spiked < 2; spiked++) {
+        SdfModel m;
+        m.seed = 63 + spiked;
+        for (int k = 0; k < 7; k++) {
+            float x = -1.8f + k * 0.6f;
+            float h = 3.0f + rng.range(-0.15f, 0.25f);
+            vec3 bark = jitterColor({0.38f, 0.26f, 0.15f}, rng, 0.1f);
+            m.prims.push_back(capsule({x, -0.3f, 0}, {x + rng.range(-0.04f, 0.04f), h, 0}, 0.27f, 0.25f, bark, 0, 0.02f));
+            m.prims.push_back(capsule({x, h, 0}, {x, h + 0.55f, 0}, 0.25f, 0.02f, bark * 1.15f, 0, 0.02f));
+        }
+        for (float y : {0.8f, 2.3f}) {
+            m.prims.push_back(capsule({-2.1f, y, 0.28f}, {2.1f, y + 0.05f, 0.28f}, 0.11f, 0.11f, {0.3f, 0.2f, 0.12f}, 0, 0.03f));
+            for (int k = 0; k < 7; k++)
+                m.prims.push_back(ellipsoid({-1.8f + k * 0.6f, y, 0.2f}, {0.06f, 0.13f, 0.16f}, {0.55f, 0.48f, 0.3f}, 0, 0.01f));  // rope
+        }
+        if (spiked)
+            for (int k = 0; k < 9; k++) {
+                float x = -1.9f + k * 0.48f, y = 0.6f + (k % 3) * 0.6f;
+                m.prims.push_back(capsule({x, y, 0.2f}, {x, y + 0.35f, 1.5f}, 0.09f, 0.01f, {0.55f, 0.45f, 0.3f}, 0, 0.02f));
+                m.prims.push_back(capsule({x, y, -0.2f}, {x, y + 0.35f, -1.6f}, 0.09f, 0.01f, {0.55f, 0.45f, 0.3f}, 0, 0.02f));
+            }
+        m.colorFn = [](vec3 p, vec3 n, vec3 c, float ao) {
+            float fib = noise3(vec3(p.x * 9.0f, p.y * 1.2f, p.z * 9.0f), 8) * 0.25f;
+            return c * (0.9f + fib) * (0.45f + 0.55f * ao);
+        };
+        MeshData md;
+        buildSdf(m, 0.045f, md);
+        (spiked ? lib.spikeWallMesh : lib.wallMesh) = upload(md);
+    }
+    // Nest: woven twigs around a soft lining.
+    {
+        SdfModel m;
+        m.seed = 66;
+        for (int k = 0; k < 40; k++) {
+            float a = rng.range(0, TAU), rr = rng.range(0.9f, 1.4f), y = rng.range(0.05f, 0.45f);
+            vec3 c(std::sin(a) * rr, y, std::cos(a) * rr);
+            vec3 t(std::cos(a), rng.range(-0.3f, 0.3f), -std::sin(a));
+            m.prims.push_back(capsule(c - t * 0.5f, c + t * 0.5f, 0.06f, 0.04f, jitterColor({0.36f, 0.26f, 0.15f}, rng, 0.15f), 0, 0.02f));
+        }
+        m.prims.push_back(ellipsoid({0, 0.1f, 0}, {1.0f, 0.15f, 1.0f}, {0.45f, 0.38f, 0.25f}, 0, 0.1f));
+        m.colorFn = [](vec3, vec3, vec3 c, float ao) { return c * (0.35f + 0.65f * ao); };
+        MeshData md;
+        buildSdf(m, 0.03f, md);
+        lib.nestMesh = upload(md);
+    }
+    // Totem: carved pole topped with a horned skull; eye sockets glow at night.
+    {
+        SdfModel m;
+        m.seed = 67;
+        vec3 wood(0.26f, 0.18f, 0.14f), bone(0.86f, 0.83f, 0.74f);
+        m.prims.push_back(capsule({0, -0.5f, 0}, {0, 5.2f, 0}, 0.36f, 0.3f, wood, 0, 0.05f));
+        for (int k = 0; k < 3; k++) {
+            float y = 1.2f + k * 1.3f;
+            m.prims.push_back(ellipsoid({0, y, 0.12f}, {0.42f, 0.5f, 0.32f}, wood * 1.15f, 0, 0.08f));
+            Prim mouth = ellipsoid({0, y - 0.2f, 0.42f}, {0.2f, 0.08f, 0.1f}, wood, 0, 0.02f);
+            mouth.subtract = true;
+            m.prims.push_back(mouth);
+        }
+        m.prims.push_back(capsule({-0.95f, 4.3f, 0}, {0.95f, 4.45f, 0}, 0.13f, 0.11f, wood, 0, 0.05f));
+        m.prims.push_back(ellipsoid({0, 5.75f, 0.05f}, {0.42f, 0.46f, 0.48f}, bone, 0, 0.06f));
+        m.prims.push_back(ellipsoid({0, 5.5f, 0.3f}, {0.26f, 0.18f, 0.25f}, bone, 0, 0.05f));
+        for (int sd = -1; sd <= 1; sd += 2) {
+            Prim sock = ellipsoid({sd * 0.16f, 5.82f, 0.42f}, {0.11f, 0.09f, 0.1f}, bone, 0, 0.02f);
+            sock.subtract = true;
+            m.prims.push_back(sock);
+        }
+        m.colorFn = [](vec3 p, vec3, vec3 c, float ao) { return c * (0.85f + 0.3f * noise3(p * 5.0f, 9)) * (0.35f + 0.65f * ao); };
+        MeshData md;
+        buildSdf(m, 0.03f, md);
+        for (int sd = -1; sd <= 1; sd += 2) {
+            addSphere(md, {sd * 0.16f, 5.82f, 0.38f}, {0.06f, 0.05f, 0.04f}, {1.0f, 0.15f, 0.05f}, 0, 2.5f, 6);
+            vec3 b(sd * 0.3f, 6.0f, 0), m1(sd * 0.75f, 6.45f, -0.15f), t(sd * 0.9f, 7.1f, -0.35f);
+            addCylinder(md, b, m1, 0.11f, 0.08f, bone, 0, 7);
+            addCone(md, m1, t, 0.08f, bone, 0, 0, 7);
+        }
+        lib.totemMesh = upload(md);
+    }
+    (void)r;
 }
 
 }  // namespace
@@ -891,6 +1126,7 @@ void ModelLibrary::build(Renderer& r) {
         buildSdf(m, 0.03f, md);
         eggMesh = upload(md);
     }
+    buildStructures(*this, r, upload);
     double secs = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
     std::printf("Model library: %d meshes, %.1fk triangles in %.1f s\n", r.meshCount(), tris / 1000.0, secs);
 }

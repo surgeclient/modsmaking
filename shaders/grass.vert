@@ -53,6 +53,11 @@ void main() {
     float pd = length(away);
     float push = (1.0 - smoothstep(0.3, 1.5, pd)) * step(abs(S.playerPos.y - ground), 2.5);
     float tt = inPos.y;
+    bool flower = r5 > 0.955 && gm.a > 0.55;
+    if (flower) {
+        hgt *= 1.25;
+        if (tt > 0.9) width *= 3.2;
+    }
     vec3 bend = vec3(windDir.x, 0.0, windDir.y) * wind * tt * tt * hgt;
     bend += vec3(away.x, 0.0, away.y) / max(pd, 0.01) * push * tt * hgt * 0.9;
     bend += facing * (r2 - 0.5) * 0.4 * tt * tt * hgt;
@@ -63,6 +68,11 @@ void main() {
     vec3 c = pow(gm.rgb, vec3(2.2)) * 0.62;
     c *= mix(0.3, 1.1, tt);
     c = mix(c, c * vec3(1.35, 1.2, 0.55), r5 * r5 * tt);
+    if (flower && tt > 0.6) {
+        float k = fract(r2 * 7.0);
+        vec3 petal = k < 0.3 ? vec3(0.9, 0.85, 0.75) : (k < 0.55 ? vec3(0.95, 0.75, 0.1) : (k < 0.8 ? vec3(0.55, 0.3, 0.85) : vec3(0.85, 0.2, 0.25)));
+        c = petal * 0.55;
+    }
     vColor = c;
     gl_Position = S.viewProj * vec4(p, 1.0);
 }

@@ -14,6 +14,6 @@ void main() {
         wp.xz += w * sway * 0.3 * S.world.z;
     }
     mat3 N = transpose(inverse(mat3(M)));
-    emitOutputs(wp.xyz, normalize(N * inNormal), inPos);
+    emitOutputs(wp.xyz, normalize(N * inNormal), inPos, 0.0);
     gl_Position = S.viewProj * wp;
 }

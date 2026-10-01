@@ -43,6 +43,7 @@ public:
     Rig infected[IC_COUNT];
     std::vector<PropModel> props[P_COUNT];
     int eggMesh = -1;
+    int campfireMesh = -1, cauldronMesh = -1, wallMesh = -1, spikeWallMesh = -1, nestMesh = -1, totemMesh = -1;
 };
 
 // Bone matrices (model space, rest-relative) from per-bone local rotations.

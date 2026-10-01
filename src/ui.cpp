@@ -3,59 +3,141 @@
 #include "game.h"
 #include <GLFW/glfw3.h>
 #include <cstdio>
+#include <cstdlib>
 
 namespace {
 
-// Classic 5x7 font, ASCII 32..95, column-major, bit 0 = top row.
-const uint8_t FONT[64][5] = {
-    {0x00, 0x00, 0x00, 0x00, 0x00}, {0x00, 0x00, 0x5F, 0x00, 0x00}, {0x00, 0x07, 0x00, 0x07, 0x00}, {0x14, 0x7F, 0x14, 0x7F, 0x14},
-    {0x24, 0x2A, 0x7F, 0x2A, 0x12}, {0x23, 0x13, 0x08, 0x64, 0x62}, {0x36, 0x49, 0x55, 0x22, 0x50}, {0x00, 0x05, 0x03, 0x00, 0x00},
-    {0x00, 0x1C, 0x22, 0x41, 0x00}, {0x00, 0x41, 0x22, 0x1C, 0x00}, {0x08, 0x2A, 0x1C, 0x2A, 0x08}, {0x08, 0x08, 0x3E, 0x08, 0x08},
-    {0x00, 0x50, 0x30, 0x00, 0x00}, {0x08, 0x08, 0x08, 0x08, 0x08}, {0x00, 0x60, 0x60, 0x00, 0x00}, {0x20, 0x10, 0x08, 0x04, 0x02},
-    {0x3E, 0x51, 0x49, 0x45, 0x3E}, {0x00, 0x42, 0x7F, 0x40, 0x00}, {0x42, 0x61, 0x51, 0x49, 0x46}, {0x21, 0x41, 0x45, 0x4B, 0x31},
-    {0x18, 0x14, 0x12, 0x7F, 0x10}, {0x27, 0x45, 0x45, 0x45, 0x39}, {0x3C, 0x4A, 0x49, 0x49, 0x30}, {0x01, 0x71, 0x09, 0x05, 0x03},
-    {0x36, 0x49, 0x49, 0x49, 0x36}, {0x06, 0x49, 0x49, 0x29, 0x1E}, {0x00, 0x36, 0x36, 0x00, 0x00}, {0x00, 0x56, 0x36, 0x00, 0x00},
-    {0x00, 0x08, 0x14, 0x22, 0x41}, {0x14, 0x14, 0x14, 0x14, 0x14}, {0x41, 0x22, 0x14, 0x08, 0x00}, {0x02, 0x01, 0x51, 0x09, 0x06},
-    {0x32, 0x49, 0x79, 0x41, 0x3E}, {0x7E, 0x11, 0x11, 0x11, 0x7E}, {0x7F, 0x49, 0x49, 0x49, 0x36}, {0x3E, 0x41, 0x41, 0x41, 0x22},
-    {0x7F, 0x41, 0x41, 0x22, 0x1C}, {0x7F, 0x49, 0x49, 0x49, 0x41}, {0x7F, 0x09, 0x09, 0x01, 0x01}, {0x3E, 0x41, 0x41, 0x51, 0x32},
-    {0x7F, 0x08, 0x08, 0x08, 0x7F}, {0x00, 0x41, 0x7F, 0x41, 0x00}, {0x20, 0x40, 0x41, 0x3F, 0x01}, {0x7F, 0x08, 0x14, 0x22, 0x41},
-    {0x7F, 0x40, 0x40, 0x40, 0x40}, {0x7F, 0x02, 0x04, 0x02, 0x7F}, {0x7F, 0x04, 0x08, 0x10, 0x7F}, {0x3E, 0x41, 0x41, 0x41, 0x3E},
-    {0x7F, 0x09, 0x09, 0x09, 0x06}, {0x3E, 0x41, 0x51, 0x21, 0x5E}, {0x7F, 0x09, 0x19, 0x29, 0x46}, {0x46, 0x49, 0x49, 0x49, 0x31},
-    {0x01, 0x01, 0x7F, 0x01, 0x01}, {0x3F, 0x40, 0x40, 0x40, 0x3F}, {0x1F, 0x20, 0x40, 0x20, 0x1F}, {0x7F, 0x20, 0x18, 0x20, 0x7F},
-    {0x63, 0x14, 0x08, 0x14, 0x63}, {0x03, 0x04, 0x78, 0x04, 0x03}, {0x61, 0x51, 0x49, 0x45, 0x43}, {0x00, 0x00, 0x7F, 0x41, 0x41},
-    {0x02, 0x04, 0x08, 0x10, 0x20}, {0x41, 0x41, 0x7F, 0x00, 0x00}, {0x04, 0x02, 0x01, 0x02, 0x04}, {0x40, 0x40, 0x40, 0x40, 0x40},
+// Vector stroke font: every glyph is a set of polylines on a 4 x 6 grid (y down),
+// rendered as anti-aliased capsules, so text stays smooth at any size.
+const char* glyphStrokes(char c) {
+    switch (c) {
+        case 'A': return "0,6 0,2 2,0 4,2 4,6|0,4 4,4";
+        case 'B': return "0,6 0,0 3,0 4,1 4,2 3,3 0,3|3,3 4,4 4,5 3,6 0,6";
+        case 'C': return "4,1 3,0 1,0 0,1 0,5 1,6 3,6 4,5";
+        case 'D': return "0,0 0,6 2,6 4,4 4,2 2,0 0,0";
+        case 'E': return "4,0 0,0 0,6 4,6|0,3 3,3";
+        case 'F': return "4,0 0,0 0,6|0,3 3,3";
+        case 'G': return "4,1 3,0 1,0 0,1 0,5 1,6 3,6 4,5 4,3 2,3";
+        case 'H': return "0,0 0,6|4,0 4,6|0,3 4,3";
+        case 'I': return "1,0 3,0|2,0 2,6|1,6 3,6";
+        case 'J': return "1,0 4,0|3,0 3,5 2,6 1,6 0,5";
+        case 'K': return "0,0 0,6|4,0 0,4|1,3 4,6";
+        case 'L': return "0,0 0,6 4,6";
+        case 'M': return "0,6 0,0 2,3 4,0 4,6";
+        case 'N': return "0,6 0,0 4,6 4,0";
+        case 'O': return "1,0 3,0 4,1 4,5 3,6 1,6 0,5 0,1 1,0";
+        case 'P': return "0,6 0,0 3,0 4,1 4,2 3,3 0,3";
+        case 'Q': return "1,0 3,0 4,1 4,5 3,6 1,6 0,5 0,1 1,0|2,4 4,6";
+        case 'R': return "0,6 0,0 3,0 4,1 4,2 3,3 0,3|2,3 4,6";
+        case 'S': return "4,1 3,0 1,0 0,1 0,2 1,3 3,3 4,4 4,5 3,6 1,6 0,5";
+        case 'T': return "0,0 4,0|2,0 2,6";
+        case 'U': return "0,0 0,5 1,6 3,6 4,5 4,0";
+        case 'V': return "0,0 2,6 4,0";
+        case 'W': return "0,0 1,6 2,3 3,6 4,0";
+        case 'X': return "0,0 4,6|4,0 0,6";
+        case 'Y': return "0,0 2,3 4,0|2,3 2,6";
+        case 'Z': return "0,0 4,0 0,6 4,6";
+        case '0': return "1,0 3,0 4,1 4,5 3,6 1,6 0,5 0,1 1,0|1,4.5 3,1.5";
+        case '1': return "1,1 2,0 2,6|1,6 3,6";
+        case '2': return "0,1 1,0 3,0 4,1 4,2 0,6 4,6";
+        case '3': return "0,1 1,0 3,0 4,1 4,2 3,3 1.5,3|3,3 4,4 4,5 3,6 1,6 0,5";
+        case '4': return "3,6 3,0 0,4 4,4";
+        case '5': return "4,0 0,0 0,3 3,3 4,4 4,5 3,6 0,6";
+        case '6': return "3,0 1,0 0,1 0,5 1,6 3,6 4,5 4,4 3,3 0,3";
+        case '7': return "0,0 4,0 1.5,6";
+        case '8': return "1,0 3,0 4,1 4,2 3,3 1,3 0,2 0,1 1,0|1,3 0,4 0,5 1,6 3,6 4,5 4,4 3,3";
+        case '9': return "4,3 1,3 0,2 0,1 1,0 3,0 4,1 4,5 3,6 1,6";
+        case '.': return "2,6 2,6";
+        case ',': return "2,5.6 1.4,7";
+        case ':': return "2,1.6 2,1.6|2,5.2 2,5.2";
+        case ';': return "2,1.6 2,1.6|2,5.2 1.4,6.6";
+        case '!': return "2,0 2,4|2,6 2,6";
+        case '?': return "0,1 1,0 3,0 4,1 4,2 2,3.5 2,4|2,6 2,6";
+        case '-': return "1,3 3,3";
+        case '+': return "0.5,3 3.5,3|2,1.5 2,4.5";
+        case '/': return "4,0 0,6";
+        case '%': return "0,6 4,0|0.6,0.6 0.6,0.9|3.4,5.1 3.4,5.4";
+        case '(': return "3,0 2,1 1.6,3 2,5 3,6";
+        case ')': return "1,0 2,1 2.4,3 2,5 1,6";
+        case '\'': return "2,0 2,1.5";
+        case '"': return "1.3,0 1.3,1.5|2.7,0 2.7,1.5";
+        case '<': return "4,1 0,3 4,5";
+        case '>': return "0,1 4,3 0,5";
+        case '[': return "3,0 1,0 1,6 3,6";
+        case ']': return "1,0 3,0 3,6 1,6";
+        case '=': return "0.5,2 3.5,2|0.5,4 3.5,4";
+        case '#': return "1,0 1,6|3,0 3,6|0,2 4,2|0,4 4,4";
+        case '_': return "0,6.6 4,6.6";
+        case '*': return "2,1 2,5|0.5,2 3.5,4|0.5,4 3.5,2";
+        case '&': return "4,6 1,2 1,1 2,0 3,1 3,2 0,4 0,5 1,6 2,6 4,4";
+        default: return "";
+    }
+}
+
+struct Glyph {
+    std::vector<std::vector<vec2>> lines;
 };
 
-inline void rect(FrameScene& s, float x, float y, float w, float h, vec4 c) { s.ui.push_back({vec4(x, y, w, h), c}); }
-
-inline float textW(const std::string& t, float px) { return t.size() * 6 * px - px; }
-
-void textRaw(FrameScene& s, float x, float y, const std::string& t, float px, vec4 col) {
-    float cx = x;
-    for (char ch : t) {
-        int c = (unsigned char)ch;
-        if (c >= 'a' && c <= 'z') c -= 32;
-        if (c < 32 || c > 95) c = '?';
-        const uint8_t* g = FONT[c - 32];
-        for (int colI = 0; colI < 5; colI++) {
-            uint8_t bits = g[colI];
-            int r = 0;
-            while (r < 7) {
-                if (bits & (1 << r)) {
-                    int start = r;
-                    while (r < 7 && (bits & (1 << r))) r++;
-                    rect(s, cx + colI * px, y + start * px, px, (r - start) * px, col);
-                } else {
-                    r++;
+const Glyph& glyph(char c) {
+    static Glyph table[128];
+    static bool init = false;
+    if (!init) {
+        init = true;
+        for (int ch = 32; ch < 128; ch++) {
+            const char* def = glyphStrokes((char)ch);
+            std::vector<vec2> line;
+            const char* p = def;
+            while (*p) {
+                if (*p == '|') {
+                    table[ch].lines.push_back(line);
+                    line.clear();
+                    p++;
+                    continue;
                 }
+                if (*p == ' ') {
+                    p++;
+                    continue;
+                }
+                char* end;
+                float x = std::strtof(p, &end);
+                p = end + 1;  // skip comma
+                float y = std::strtof(p, &end);
+                p = end;
+                line.push_back(vec2(x, y));
             }
+            if (!line.empty()) table[ch].lines.push_back(line);
         }
-        cx += 6 * px;
+    }
+    unsigned char u = (unsigned char)c;
+    if (u >= 'a' && u <= 'z') u -= 32;
+    return table[u < 128 ? u : '?'];
+}
+
+inline void rect(FrameScene& s, float x, float y, float w, float h, vec4 c) { s.ui.push_back({vec4(x, y, w, h), c, vec4(0, 0, 0, 0)}); }
+inline void rrect(FrameScene& s, float x, float y, float w, float h, vec4 c, float radius, float soft = 0) {
+    s.ui.push_back({vec4(x, y, w, h), c, vec4(0, std::min(radius, std::min(w, h) * 0.5f), soft, 0)});
+}
+inline void line(FrameScene& s, vec2 a, vec2 b, float thick, vec4 c, float soft = 0) { s.ui.push_back({vec4(a.x, a.y, b.x, b.y), c, vec4(1, thick, soft, 0)}); }
+
+inline float textW(const std::string& t, float px) { return t.size() * 6.0f * px - 1.6f * px; }
+
+void textRaw(FrameScene& s, float x, float y, const std::string& t, float px, vec4 col, float thickMul = 1.0f, float soft = 0) {
+    float sc = px * 1.12f;
+    float thick = std::max(1.3f, px * 0.9f) * thickMul;
+    float cx = x + px * 0.2f;
+    for (char ch : t) {
+        const Glyph& g = glyph(ch);
+        for (const auto& l : g.lines) {
+            if (l.size() == 1) line(s, vec2(cx + l[0].x * sc, y + l[0].y * sc), vec2(cx + l[0].x * sc, y + l[0].y * sc), thick, col, soft);
+            for (size_t i = 0; i + 1 < l.size(); i++)
+                line(s, vec2(cx + l[i].x * sc, y + l[i].y * sc), vec2(cx + l[i + 1].x * sc, y + l[i + 1].y * sc), thick, col, soft);
+        }
+        cx += 6.0f * px;
     }
 }
 
 void text(FrameScene& s, float x, float y, const std::string& t, float px, vec4 col) {
-    textRaw(s, x + px * 0.6f, y + px * 0.6f, t, px, vec4(0, 0, 0, col.w * 0.7f));
+    textRaw(s, x + px * 0.35f, y + px * 0.5f, t, px, vec4(0, 0, 0, col.w * 0.55f), 2.2f, px * 0.6f);
     textRaw(s, x, y, t, px, col);
 }
 
@@ -71,25 +153,24 @@ void gradient(FrameScene& s, float x, float y, float w, float h, vec4 top, vec4 
 }
 
 void bar(FrameScene& s, float x, float y, float w, float h, float frac, vec3 col, const std::string& label, float px) {
-    rect(s, x - 3, y - 3, w + 6, h + 6, vec4(0, 0, 0, 0.45f));
-    rect(s, x - 1, y - 1, w + 2, h + 2, vec4(col * 0.6f, 0.6f));
-    gradient(s, x, y, w, h, vec4(col * 0.18f, 0.85f), vec4(col * 0.08f, 0.85f), 4);
-    float fw = w * saturate(frac);
-    gradient(s, x, y, fw, h, vec4(lerp(col, vec3(1, 1, 1), 0.35f), 0.97f), vec4(col * 0.75f, 0.97f), 6);
-    rect(s, x, y, fw, std::max(1.0f, h * 0.12f), vec4(1, 1, 1, 0.25f));
-    if (!label.empty()) text(s, x + 6, y + (h - 7 * px) * 0.5f, label, px, vec4(1, 1, 1, 0.95f));
+    float r = h * 0.5f;
+    rrect(s, x - 4, y - 3, w + 8, h + 6, vec4(0, 0, 0, 0.35f), r + 3, 6);
+    rrect(s, x - 1.5f, y - 1.5f, w + 3, h + 3, vec4(col * 0.7f, 0.55f), r + 1.5f);
+    rrect(s, x, y, w, h, vec4(col * 0.1f, 0.9f), r);
+    float fw = std::max(w * saturate(frac), frac > 0.001f ? h : 0.0f);
+    if (fw > 0) {
+        rrect(s, x, y, fw, h, vec4(col * 0.85f, 0.97f), r);
+        rrect(s, x + 2, y + 1.5f, fw - 4, h * 0.42f, vec4(lerp(col, vec3(1, 1, 1), 0.45f), 0.55f), h * 0.2f);
+    }
+    if (!label.empty()) text(s, x + h * 0.6f, y + (h - 6.7f * px) * 0.5f, label, px, vec4(1, 1, 1, 0.95f));
 }
 
 void panelBox(FrameScene& s, float x, float y, float w, float h) {
-    rect(s, x - 10, y - 10, w + 20, h + 20, vec4(0, 0, 0, 0.25f));  // soft shadow
-    gradient(s, x, y, w, h, vec4(0.09f, 0.08f, 0.1f, 0.96f), vec4(0.03f, 0.03f, 0.05f, 0.97f), 12);
-    vec4 edge(0.95f, 0.72f, 0.36f, 0.85f), inner(0.95f, 0.72f, 0.36f, 0.25f);
-    rect(s, x - 2, y - 2, w + 4, 2, edge);
-    rect(s, x - 2, y + h, w + 4, 2, edge);
-    rect(s, x - 2, y, 2, h, edge);
-    rect(s, x + w, y, 2, h, edge);
-    rect(s, x + 6, y + 6, w - 12, 1, inner);
-    rect(s, x + 6, y + h - 7, w - 12, 1, inner);
+    rrect(s, x - 6, y + 4, w + 12, h + 10, vec4(0, 0, 0, 0.5f), 18, 16);       // drop shadow
+    rrect(s, x - 1.5f, y - 1.5f, w + 3, h + 3, vec4(0.95f, 0.74f, 0.38f, 0.7f), 15);  // gold rim
+    rrect(s, x, y, w, h, vec4(0.055f, 0.055f, 0.075f, 0.94f), 14);
+    rrect(s, x, y, w, 46, vec4(0.95f, 0.74f, 0.38f, 0.07f), 14);               // header sheen
+    rrect(s, x + 18, y + 46, w - 36, 1.5f, vec4(0.95f, 0.74f, 0.38f, 0.35f), 0.7f);
 }
 
 std::string fmtTime(float t) {
@@ -258,8 +339,12 @@ void Game::drawTitle(FrameScene& s) {
     float fadeIn = saturate(titleTime_ / 1.5f);
     rect(s, 0, 0, W, H, vec4(0, 0, 0, 0.25f + (1 - fadeIn) * 0.75f));
     float big = 12 * ui;
-    textC(s, W * 0.5f + 4 * ui, H * 0.22f + 4 * ui, "MYTHBOUND", big, vec4(0.5f, 0.05f, 0.02f, fadeIn));
-    textC(s, W * 0.5f, H * 0.22f, "MYTHBOUND", big, vec4(1.0f, 0.82f, 0.45f, fadeIn));
+    // Layered glow behind the logo.
+    for (int k = 3; k >= 1; k--) {
+        float w = textW("MYTHBOUND", big);
+        textRaw(s, W * 0.5f - w * 0.5f, H * 0.22f, "MYTHBOUND", big, vec4(1.0f, 0.45f, 0.15f, 0.12f * fadeIn), 1.0f + k * 1.6f, big * 0.8f * k);
+    }
+    textC(s, W * 0.5f, H * 0.22f, "MYTHBOUND", big, vec4(1.0f, 0.86f, 0.55f, fadeIn));
     textC(s, W * 0.5f, H * 0.22f + big * 9, "SURVIVE THE ISLAND.  TAME THE LEGENDS.  ENDURE THE NIGHT.", 2 * ui, vec4(0.9f, 0.9f, 0.95f, fadeIn));
     float pulse = 0.6f + 0.4f * std::sin(titleTime_ * 3);
     textC(s, W * 0.5f, H * 0.6f, "PRESS ENTER TO BEGIN", 3 * ui, vec4(1, 1, 1, pulse * fadeIn));
@@ -338,13 +423,22 @@ void Game::drawHUD(FrameScene& s) {
     }
 
     // Crosshair.
-    rect(s, W * 0.5f - 1 * ui, H * 0.5f - 7 * ui, 2 * ui, 14 * ui, vec4(1, 1, 1, 0.7f));
-    rect(s, W * 0.5f - 7 * ui, H * 0.5f - 1 * ui, 14 * ui, 2 * ui, vec4(1, 1, 1, 0.7f));
+    {
+        vec2 c(W * 0.5f, H * 0.5f);
+        float g = 4 * ui, l = 9 * ui;
+        for (int k = 0; k < 4; k++) {
+            vec2 d = k == 0 ? vec2(1, 0) : k == 1 ? vec2(-1, 0) : k == 2 ? vec2(0, 1) : vec2(0, -1);
+            line(s, c + d * g, c + d * l, 3.2f * ui, vec4(0, 0, 0, 0.35f), 1.0f);
+            line(s, c + d * g, c + d * l, 1.6f * ui, vec4(1, 1, 1, 0.85f));
+        }
+        line(s, c, c, 2.4f * ui, vec4(1, 1, 1, 0.9f));
+    }
 
     // Interaction prompt.
     if (!iaPrompt_.empty() && panel_ == PANEL_NONE) {
         float tw = textW(iaPrompt_, px);
-        rect(s, W * 0.5f - tw * 0.5f - 10 * ui, H * 0.62f - 8 * ui, tw + 20 * ui, 7 * px + 16 * ui, vec4(0, 0, 0, 0.5f));
+        rrect(s, W * 0.5f - tw * 0.5f - 16 * ui, H * 0.62f - 10 * ui, tw + 32 * ui, 7 * px + 20 * ui, vec4(0.03f, 0.03f, 0.05f, 0.7f), 12 * ui, 2);
+        rrect(s, W * 0.5f - tw * 0.5f - 16 * ui, H * 0.62f + 7 * px + 7 * ui, tw + 32 * ui, 2 * ui, vec4(0.95f, 0.75f, 0.4f, 0.6f), 1 * ui);
         textC(s, W * 0.5f, H * 0.62f, iaPrompt_, px, vec4(1, 0.95f, 0.7f, 1));
     }
 
@@ -355,12 +449,15 @@ void Game::drawHUD(FrameScene& s) {
     for (int i = 0; i < 8; i++) {
         float x = hx + i * (slot + gap);
         bool sel = i == p.hotSel;
-        rect(s, x, hy, slot, slot, sel ? vec4(0.95f, 0.75f, 0.35f, 0.85f) : vec4(0, 0, 0, 0.5f));
-        rect(s, x + 3 * ui, hy + 3 * ui, slot - 6 * ui, slot - 6 * ui, vec4(0.08f, 0.08f, 0.1f, 0.85f));
+        if (sel) rrect(s, x - 4 * ui, hy - 4 * ui, slot + 8 * ui, slot + 8 * ui, vec4(1.0f, 0.75f, 0.3f, 0.45f), 14 * ui, 8 * ui);
+        rrect(s, x, hy, slot, slot, sel ? vec4(0.98f, 0.78f, 0.4f, 0.95f) : vec4(1, 1, 1, 0.18f), 11 * ui);
+        rrect(s, x + 2 * ui, hy + 2 * ui, slot - 4 * ui, slot - 4 * ui, vec4(0.06f, 0.06f, 0.08f, 0.82f), 9 * ui);
         text(s, x + 5 * ui, hy + 5 * ui, std::to_string(i + 1), 1.2f * ui, vec4(0.7f, 0.7f, 0.7f, 0.8f));
         if (i < (int)items.size()) {
             Item it = items[i];
-            rect(s, x + slot * 0.3f, hy + slot * 0.22f, slot * 0.4f, slot * 0.4f, vec4(ITEMS[it].color, 1));
+            rrect(s, x + slot * 0.3f, hy + slot * 0.2f, slot * 0.4f, slot * 0.4f, vec4(ITEMS[it].color * 0.6f, 1), slot * 0.2f, 3);
+            rrect(s, x + slot * 0.33f, hy + slot * 0.22f, slot * 0.34f, slot * 0.34f, vec4(ITEMS[it].color, 1), slot * 0.17f);
+            rrect(s, x + slot * 0.38f, hy + slot * 0.25f, slot * 0.14f, slot * 0.1f, vec4(1, 1, 1, 0.45f), slot * 0.05f);
             std::string name = ITEMS[it].name;
             size_t sp = name.find(' ');
             std::string shortName = sp != std::string::npos ? name.substr(sp + 1) : name;

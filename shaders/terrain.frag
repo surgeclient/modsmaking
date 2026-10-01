@@ -77,5 +77,5 @@ void main() {
         lit += vec3(1.0, 0.28, 0.04) * k * 7.0 * flicker * (0.7 + n3 * 0.6);
     }
     lit = applyFog(lit, vWorld);
-    outColor = vec4(lit, 1.0);
+    outColor = vec4(lit, dist);
 }

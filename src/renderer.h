@@ -13,7 +13,9 @@ struct Vertex {
     vec3 normal;
     vec4 color;
     vec4 skin;
-    float sway;
+    float sway;  // wind weight (static meshes) / extra gloss (skinned meshes)
+    vec2 uv;     // card texture coordinates
+    float card;  // 0 = solid surface, else alpha-cut card type (1 leaves, 2 needles, 3 fronds, 4 feathers)
 };
 
 // Per-instance data. color.rgb tints the mesh, color.a scales its emissive parts.
@@ -30,8 +32,9 @@ struct ParticleInst {
 };
 
 struct UIQuad {
-    vec4 rect;   // x, y, w, h in pixels (top-left origin)
+    vec4 rect;   // type 0: x, y, w, h (top-left origin). type 1: x0, y0, x1, y1 line segment
     vec4 color;  // rgba
+    vec4 extra;  // x type (0 rounded rect, 1 line), y corner radius / line thickness, z edge softness
 };
 
 enum BuiltinMesh { MESH_CUBE, MESH_SPHERE, MESH_CONE, MESH_CYL, MESH_BUILTIN_COUNT };
@@ -70,6 +73,9 @@ struct FrameScene {
     std::vector<mat4> bones;
     std::vector<ParticleInst> particlesAdd, particlesAlpha;
     std::vector<UIQuad> ui;
+    vec4 post2;  // x,y sun position on screen (uv), z god-ray strength, w ambient-occlusion strength
+    vec4 post3;  // x tan(fovY/2), y aspect, z time, w sharpening
+    vec4 sunScreenColor;
     bool drawTerrain = true, drawWater = true, drawGrass = true;
     void reset(int meshCount) {
         inst.assign(meshCount, {});
@@ -143,6 +149,7 @@ private:
         bool depthBias = false;
         VkSampleCountFlagBits samples = VK_SAMPLE_COUNT_1_BIT;
         bool colorOutput = true;
+        bool rgbOnly = false;  // keep alpha (it stores scene depth) untouched
     };
 
     bool createInstance(bool validation);
@@ -200,8 +207,8 @@ private:
     // Offscreen targets.
     const VkFormat hdrFormat_ = VK_FORMAT_R16G16B16A16_SFLOAT;
     VkFormat depthFormat_ = VK_FORMAT_D32_SFLOAT;
-    Image msaaColor_, msaaDepth_, hdr_, bloom_[BLOOM_LEVELS];
-    VkFramebuffer mainFb_ = VK_NULL_HANDLE, bloomFb_[BLOOM_LEVELS] = {};
+    Image msaaColor_, msaaDepth_, hdr_, bloom_[BLOOM_LEVELS], ao_, rays_;
+    VkFramebuffer mainFb_ = VK_NULL_HANDLE, bloomFb_[BLOOM_LEVELS] = {}, aoFb_ = VK_NULL_HANDLE, raysFb_ = VK_NULL_HANDLE;
     Image shadow_;
     VkFramebuffer shadowFb_ = VK_NULL_HANDLE;
     Image heightTex_, grassTex_;
@@ -211,7 +218,7 @@ private:
 
     VkDescriptorSetLayout sceneSetLayout_ = VK_NULL_HANDLE, postSetLayout_ = VK_NULL_HANDLE;
     VkDescriptorPool descPool_ = VK_NULL_HANDLE;
-    VkDescriptorSet downSets_[BLOOM_LEVELS] = {}, upSets_[BLOOM_LEVELS] = {}, compositeSet_ = VK_NULL_HANDLE;
+    VkDescriptorSet downSets_[BLOOM_LEVELS] = {}, upSets_[BLOOM_LEVELS] = {}, compositeSet_ = VK_NULL_HANDLE, aoSet_ = VK_NULL_HANDLE, raysSet_ = VK_NULL_HANDLE;
     VkPipelineLayout sceneLayout_ = VK_NULL_HANDLE, postLayout_ = VK_NULL_HANDLE, uiLayout_ = VK_NULL_HANDLE;
     VkSampler shadowSampler_ = VK_NULL_HANDLE, linearSampler_ = VK_NULL_HANDLE;
 
@@ -219,6 +226,7 @@ private:
     VkPipeline terrainPipe_ = VK_NULL_HANDLE, litPipe_ = VK_NULL_HANDLE, skinPipe_ = VK_NULL_HANDLE;
     VkPipeline grassPipe_ = VK_NULL_HANDLE, waterPipe_ = VK_NULL_HANDLE, skyPipe_ = VK_NULL_HANDLE;
     VkPipeline particleAddPipe_ = VK_NULL_HANDLE, particleAlphaPipe_ = VK_NULL_HANDLE;
+    VkPipeline ssaoPipe_ = VK_NULL_HANDLE, raysPipe_ = VK_NULL_HANDLE;
     VkPipeline bloomDownPipe_ = VK_NULL_HANDLE, bloomUpPipe_ = VK_NULL_HANDLE, compositePipe_ = VK_NULL_HANDLE, uiPipe_ = VK_NULL_HANDLE;
 
     VkCommandPool cmdPool_ = VK_NULL_HANDLE;

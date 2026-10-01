@@ -70,16 +70,25 @@ It's written from scratch in C++17 against the **raw Vulkan API**, and needs no 
   on the GPU. Walk cycles, wing flaps, tail sway, jaw bites, hydra necks, serpent slithering,
   sleeping poses, attack swings and riding poses are all animated in code.
 - **HDR rendering pipeline:**
-  - two-cascade 4096×2048 shadow map with PCF filtering
-  - 4x MSAA
+  - two-cascade 4096×2048 shadow map with rotated-Poisson soft PCF, alpha-tested for foliage
+  - 4x MSAA, with alpha-to-coverage-style dithered sample masks for leaves and feathers
+  - screen-space ambient occlusion and screen-space god rays (both at half resolution)
   - bloom (5-level down/up chain)
   - ACES tone mapping
-  - colour grading (S-curve, warm highlights and cool shadows), vignette and film grain
+  - colour grading (S-curve, warm highlights and cool shadows), sharpening, subtle chromatic
+    aberration, vignette and film grain
+- **Foliage and feathers.** Trees carry thousands of procedurally shaped leaf, needle and frond
+  cards around a sculpted canopy core. Flying creatures have individual primary, secondary and
+  covert feather cards, and birds have fanned tail feathers.
+- **Surface detail.** Shaders add overlapping scales on dragons, fur and feather sheen, bark
+  ridges, rock normals, and glossy eyes with catchlights.
+- **Sculpted camp.** Campfires, cauldrons, palisade walls, spike walls, nests and tribe totems
+  are all modelled with glowing embers, brews and eye sockets.
 - **Terrain detail.** Terrain is textured per pixel in the shader: dirt patches, layered rock
   strata, sand ripples, wet shorelines, snow sparkle, micro-normals, and glowing lava cracks
   carved into the volcano and the Hollow.
-- **GPU grass.** 90,000 animated blades around the camera, placed entirely in the vertex shader
-  from a height and density map. They sway in the wind and bend away from the player.
+- **GPU grass.** 90,000 animated blades and wildflowers around the camera, placed entirely in the
+  vertex shader from a height and density map. They sway in the wind and bend away from the player.
 - **Water.** Shallows are clear and deepen by depth, with shoreline foam, animated ripples,
   fresnel sky reflections and sun glints.
 - **Sky.** Lit fluffy clouds with silver linings, a sun with glow, a moon (it turns red when the
@@ -168,7 +177,7 @@ CI builds the game on Linux and Windows and runs the tests on a software Vulkan 
 
 | File | What it does |
 |---|---|
-| `src/renderer.*`, `src/vk_funcs.*`, `shaders/` | Vulkan engine: shadows, HDR + MSAA, skinning, grass, water, bloom, grading |
+| `src/renderer.*`, `src/vk_funcs.*`, `shaders/` | Vulkan engine: shadows, HDR + MSAA, skinning, grass, water, SSAO, god rays, bloom, grading |
 | `src/world.*` | Island generation, biomes, the Hollow, resource props |
 | `src/data.*` | Creature species, items, recipes, tribe classes. **Start here to add content** |
 | `src/creatures.cpp` | Creature AI, taming, eggs, babies, wildlife respawns |
@@ -176,8 +185,8 @@ CI builds the game on Linux and Windows and runs the tests on a software Vulkan 
 | `src/player.cpp` | Movement, survival stats, gathering, combat, riding, building |
 | `src/combat.cpp` | Damage, knockouts, projectiles, particles, collisions |
 | `src/meshgen.*` | Signed-distance-field modeller + surface nets mesher |
-| `src/models.*` | Creature / humanoid skeletons and sculpts, trees, rocks, plants |
+| `src/models.*` | Creature / humanoid skeletons and sculpts, trees, rocks, plants, camp structures |
 | `src/draw.cpp` | Animation, scene assembly, lighting and shadow cascades |
-| `src/ui.cpp` | HUD, crafting, taming and brewing panels, pixel font |
+| `src/ui.cpp` | HUD, crafting, taming and brewing panels, SDF shapes and a vector stroke font |
 | `src/trailer.cpp` | The boot trailer |
 | `src/selftest.cpp` | Automated gameplay tests |

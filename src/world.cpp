@@ -84,9 +84,9 @@ static vec3 biomeColor(Biome b, float h, float slope, float n) {
     switch (b) {
         case B_OCEAN: c = vec3(0.62f, 0.56f, 0.40f); break;
         case B_BEACH: c = vec3(0.8f, 0.72f, 0.53f); break;
-        case B_MEADOW: c = vec3(0.45f, 0.66f, 0.26f); break;
+        case B_MEADOW: c = vec3(0.44f, 0.56f, 0.27f); break;
         case B_FOREST: c = vec3(0.27f, 0.47f, 0.20f); break;
-        case B_JUNGLE: c = vec3(0.22f, 0.52f, 0.20f); break;
+        case B_JUNGLE: c = vec3(0.24f, 0.44f, 0.19f); break;
         case B_HIGHLANDS: c = vec3(0.50f, 0.52f, 0.36f); break;
         case B_SNOW: c = vec3(0.93f, 0.95f, 0.98f); break;
         case B_ASHLANDS: c = vec3(0.24f, 0.21f, 0.20f); break;
@@ -157,9 +157,9 @@ void Terrain::buildMaps(int& n, std::vector<float>& heights, std::vector<uint32_
             float d = 0;
             vec3 c(0.4f, 0.6f, 0.2f);
             switch (b) {
-                case B_MEADOW: d = 1.0f, c = vec3(0.45f, 0.64f, 0.22f); break;
+                case B_MEADOW: d = 1.0f, c = vec3(0.45f, 0.58f, 0.24f); break;
                 case B_FOREST: d = 0.75f, c = vec3(0.3f, 0.5f, 0.17f); break;
-                case B_JUNGLE: d = 0.95f, c = vec3(0.24f, 0.52f, 0.16f); break;
+                case B_JUNGLE: d = 0.95f, c = vec3(0.26f, 0.46f, 0.17f); break;
                 case B_HIGHLANDS: d = 0.5f, c = vec3(0.55f, 0.56f, 0.3f); break;
                 case B_BEACH: d = h > 1.8f ? 0.25f : 0.0f, c = vec3(0.62f, 0.62f, 0.36f); break;
                 case B_ASHLANDS: d = 0.12f, c = vec3(0.32f, 0.26f, 0.18f); break;

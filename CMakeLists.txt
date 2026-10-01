@@ -38,6 +38,7 @@ endif()
 #     shaders/spv so the game builds even without glslangValidator. -----------
 set(SHADER_NAMES lit.vert skin.vert lit.frag terrain.vert terrain.frag shadow.vert shadow_skin.vert grass.vert grass.frag
     water.vert water.frag sky.vert sky.frag particle.vert particle.frag post.vert bloom_down.frag bloom_up.frag composite.frag
+    ssao.frag rays.frag shadow.frag
     ui.vert ui.frag)
 file(GLOB SHADER_INCLUDES ${CMAKE_SOURCE_DIR}/shaders/*.glsl)
 find_program(GLSLANG_VALIDATOR glslangValidator HINTS $ENV{VULKAN_SDK}/bin)
