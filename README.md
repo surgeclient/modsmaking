@@ -2,7 +2,8 @@
 
 An ARK-style survival game with **mythical creatures instead of dinosaurs**. It runs on a
 custom **C++ / Vulkan** engine written from scratch: no game engine, no model files
-and no textures. Everything, from the island to the dragons and the tribe, is built from code.
+and no textures. Everything, from the island to the dragons and the tribe, is sculpted, animated
+and textured in code.
 
 ![The Hollow opens](docs/screenshots/trailer_hollow.jpg)
 
@@ -13,7 +14,8 @@ everything they see. They don't know where you are, so hide, run, swim or fight.
 
 | | |
 |---|---|
-| ![creatures](docs/screenshots/creatures.jpg) | ![night](docs/screenshots/night.jpg) |
+| ![day](docs/screenshots/day.jpg) | ![creatures](docs/screenshots/creatures.jpg) |
+| ![night](docs/screenshots/night.jpg) | ![herd](docs/screenshots/trailer_herd.jpg) |
 | ![riding](docs/screenshots/riding.jpg) | ![taming](docs/screenshots/taming.jpg) |
 | ![dragon](docs/screenshots/trailer_dragon.jpg) | ![brewing](docs/screenshots/brewing.jpg) |
 
@@ -58,17 +60,36 @@ everything they see. They don't know where you are, so hide, run, swim or fight.
 
 ## The engine
 
-- Written from scratch in C++17 against the **raw Vulkan API**. Every Vulkan function is loaded
-  at runtime, so you don't need the Vulkan SDK to run or build it.
-- **Instanced rendering:** each model is assembled from 4 primitive meshes, so the whole world
-  draws in about 13 draw calls per frame (shadow pass plus main pass).
-- **Lighting:** a 2048² shadow map with PCF filtering and texel snapping, hemisphere ambient
-  light, up to 16 point lights (campfires, torches, fire creatures, the Hollow's glow), exponential
-  and height fog, ACES tone mapping and sRGB output.
-- A procedural sky (sun, moon, stars, clouds), animated ocean waves with fresnel reflection, and
-  frustum culling with distance-based level of detail.
-- 2 frames in flight. It prefers mailbox present mode and handles window resizing.
-- The UI uses a built-in 5×7 pixel font drawn with instanced quads, so there are no font files.
+It's written from scratch in C++17 against the **raw Vulkan API**, and needs no Vulkan SDK to run or build.
+
+- **Procedural modelling.** Every creature, person, tree and rock is sculpted in code at startup.
+  Each one is built from smoothly blended shapes and turned into a mesh by a hand-written
+  surface-nets mesher, with baked ambient occlusion, colour blending, countershading and
+  markings. All 21 creatures and 6 humanoids take about 1 second.
+- **Skeletal animation.** Creatures and people have skeletons (up to 38 bones) and are skinned
+  on the GPU. Walk cycles, wing flaps, tail sway, jaw bites, hydra necks, serpent slithering,
+  sleeping poses, attack swings and riding poses are all animated in code.
+- **HDR rendering pipeline:**
+  - two-cascade 4096×2048 shadow map with PCF filtering
+  - 4x MSAA
+  - bloom (5-level down/up chain)
+  - ACES tone mapping
+  - colour grading (S-curve, warm highlights and cool shadows), vignette and film grain
+- **Terrain detail.** Terrain is textured per pixel in the shader: dirt patches, layered rock
+  strata, sand ripples, wet shorelines, snow sparkle, micro-normals, and glowing lava cracks
+  carved into the volcano and the Hollow.
+- **GPU grass.** 90,000 animated blades around the camera, placed entirely in the vertex shader
+  from a height and density map. They sway in the wind and bend away from the player.
+- **Water.** Shallows are clear and deepen by depth, with shoreline foam, animated ripples,
+  fresnel sky reflections and sun glints.
+- **Sky.** Lit fluffy clouds with silver linings, a sun with glow, a moon (it turns red when the
+  Hollow is open), and twinkling stars with a faint galaxy band.
+- **Particles.** Soft blended particles for fire, smoke, embers, fireflies, the phoenix's trail,
+  dragon breath and magic bolts.
+- **Lighting.** Up to 16 dynamic point lights (campfires, torches, fire creatures, the Hollow's
+  glow), plus hemisphere ambient, specular and foliage translucency.
+- **Performance.** Instanced rendering with level-of-detail meshes for distant props, frustum
+  culling, and distant props left out of the shadow pass.
 
 ## Building
 
@@ -147,14 +168,16 @@ CI builds the game on Linux and Windows and runs the tests on a software Vulkan 
 
 | File | What it does |
 |---|---|
-| `src/renderer.*`, `src/vk_funcs.*`, `shaders/` | Vulkan engine: swapchain, shadow pass, pipelines, instancing |
+| `src/renderer.*`, `src/vk_funcs.*`, `shaders/` | Vulkan engine: shadows, HDR + MSAA, skinning, grass, water, bloom, grading |
 | `src/world.*` | Island generation, biomes, the Hollow, resource props |
 | `src/data.*` | Creature species, items, recipes, tribe classes. **Start here to add content** |
 | `src/creatures.cpp` | Creature AI, taming, eggs, babies, wildlife respawns |
 | `src/tribe.cpp` | Infected tribe: war bands, formations, sight, hunting, dawn |
 | `src/player.cpp` | Movement, survival stats, gathering, combat, riding, building |
 | `src/combat.cpp` | Damage, knockouts, projectiles, particles, collisions |
-| `src/draw.cpp` | Procedural models for every creature, the tribe, props and structures; lighting |
+| `src/meshgen.*` | Signed-distance-field modeller + surface nets mesher |
+| `src/models.*` | Creature / humanoid skeletons and sculpts, trees, rocks, plants |
+| `src/draw.cpp` | Animation, scene assembly, lighting and shadow cascades |
 | `src/ui.cpp` | HUD, crafting, taming and brewing panels, pixel font |
 | `src/trailer.cpp` | The boot trailer |
 | `src/selftest.cpp` | Automated gameplay tests |

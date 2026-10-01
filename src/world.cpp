@@ -83,7 +83,7 @@ static vec3 biomeColor(Biome b, float h, float slope, float n) {
     vec3 c;
     switch (b) {
         case B_OCEAN: c = vec3(0.62f, 0.56f, 0.40f); break;
-        case B_BEACH: c = vec3(0.90f, 0.82f, 0.60f); break;
+        case B_BEACH: c = vec3(0.8f, 0.72f, 0.53f); break;
         case B_MEADOW: c = vec3(0.45f, 0.66f, 0.26f); break;
         case B_FOREST: c = vec3(0.27f, 0.47f, 0.20f); break;
         case B_JUNGLE: c = vec3(0.22f, 0.52f, 0.20f); break;
@@ -108,27 +108,69 @@ void Terrain::buildMesh(std::vector<Vertex>& v, std::vector<uint32_t>& idx) cons
             float wx = -HALF + x * CELL, wz = -HALF + z * CELL;
             float h = h_[z * (N + 1) + x];
             vec3 n = normalAt(wx, wz);
-            float slope = 1.0f - n.y;
-            slope = saturate(slope * 3.2f);
+            float slope = saturate((1.0f - n.y) * 3.2f);
             float noise = fbm(wx * 0.08f, wz * 0.08f, 2, 99);
             Biome b = biomeAt(wx, wz);
             vec3 c = biomeColor(b, h, slope, noise);
-            // Glowing red veins in the corrupted ground around the Hollow.
+            float emissive = 0;
             if (b == B_CORRUPT) {
                 float vein = std::fabs(fbm(wx * 0.05f, wz * 0.05f, 3, 55));
-                c = lerp(c, vec3(0.5f, 0.08f, 0.07f), smoothstep(0.08f, 0.0f, vein) * 0.7f);
+                float k = smoothstep(0.08f, 0.0f, vein);
+                c = lerp(c, vec3(0.12f, 0.04f, 0.05f), k * 0.6f);
+                emissive = k * 0.6f;
             }
             if (b == B_ASHLANDS) {
                 float lava = std::fabs(fbm(wx * 0.03f, wz * 0.03f, 3, 66));
-                c = lerp(c, vec3(0.9f, 0.3f, 0.05f), smoothstep(0.05f, 0.0f, lava) * 0.85f);
+                float k = smoothstep(0.09f, 0.0f, lava);
+                c = lerp(c, vec3(0.16f, 0.1f, 0.08f), k);
+                emissive = k;
             }
-            v.push_back({{wx, h, wz}, n, c});
+            // Concavity-based ambient occlusion.
+            float sum = 0;
+            const float r = CELL * 3.0f;
+            for (int k = 0; k < 8; k++) {
+                float a = k * TAU / 8;
+                sum += heightAt(wx + std::cos(a) * r, wz + std::sin(a) * r);
+            }
+            float ao = clampf(1.0f - (sum / 8.0f - h) * 0.12f, 0.45f, 1.0f);
+            v.push_back({{wx, h, wz}, n, vec4(c, emissive), vec4(0, 0, 0, ao), 0});
         }
     idx.reserve(N * N * 6);
     for (int z = 0; z < N; z++)
         for (int x = 0; x < N; x++) {
             uint32_t a = z * (N + 1) + x, b = a + N + 1;
             idx.insert(idx.end(), {a, b, a + 1, a + 1, b, b + 1});
+        }
+}
+
+void Terrain::buildMaps(int& n, std::vector<float>& heights, std::vector<uint32_t>& grass) const {
+    n = N + 1;
+    heights = h_;
+    grass.resize(h_.size());
+    for (int z = 0; z <= N; z++)
+        for (int x = 0; x <= N; x++) {
+            float wx = -HALF + x * CELL, wz = -HALF + z * CELL;
+            float h = h_[z * (N + 1) + x];
+            Biome b = biomeAt(wx, wz);
+            vec3 nrm = normalAt(wx, wz);
+            float var = fbm(wx * 0.02f, wz * 0.02f, 3, 123);
+            float d = 0;
+            vec3 c(0.4f, 0.6f, 0.2f);
+            switch (b) {
+                case B_MEADOW: d = 1.0f, c = vec3(0.45f, 0.64f, 0.22f); break;
+                case B_FOREST: d = 0.75f, c = vec3(0.3f, 0.5f, 0.17f); break;
+                case B_JUNGLE: d = 0.95f, c = vec3(0.24f, 0.52f, 0.16f); break;
+                case B_HIGHLANDS: d = 0.5f, c = vec3(0.55f, 0.56f, 0.3f); break;
+                case B_BEACH: d = h > 1.8f ? 0.25f : 0.0f, c = vec3(0.62f, 0.62f, 0.36f); break;
+                case B_ASHLANDS: d = 0.12f, c = vec3(0.32f, 0.26f, 0.18f); break;
+                case B_CORRUPT: d = h > -5.0f ? 0.45f : 0.0f, c = vec3(0.42f, 0.1f, 0.12f); break;
+                default: d = 0;
+            }
+            d *= smoothstep(0.72f, 0.88f, nrm.y);
+            d *= smoothstep(-0.2f, 0.3f, var + 0.2f);
+            c = c * (0.8f + 0.4f * (var + 0.5f));
+            auto u8 = [](float f) { return (uint32_t)(clampf(f, 0.0f, 1.0f) * 255.0f + 0.5f); };
+            grass[z * (N + 1) + x] = u8(c.x) | (u8(c.y) << 8) | (u8(c.z) << 16) | (u8(d) << 24);
         }
 }
 

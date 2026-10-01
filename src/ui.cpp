@@ -61,20 +61,35 @@ void text(FrameScene& s, float x, float y, const std::string& t, float px, vec4 
 
 void textC(FrameScene& s, float cx, float y, const std::string& t, float px, vec4 col) { text(s, cx - textW(t, px) * 0.5f, y, t, px, col); }
 
+// Vertical gradient made of thin strips.
+void gradient(FrameScene& s, float x, float y, float w, float h, vec4 top, vec4 bottom, int steps = 8) {
+    for (int i = 0; i < steps; i++) {
+        float t = (i + 0.5f) / steps;
+        vec4 c(lerpf(top.x, bottom.x, t), lerpf(top.y, bottom.y, t), lerpf(top.z, bottom.z, t), lerpf(top.w, bottom.w, t));
+        rect(s, x, y + h * i / steps, w, h / steps + 0.5f, c);
+    }
+}
+
 void bar(FrameScene& s, float x, float y, float w, float h, float frac, vec3 col, const std::string& label, float px) {
-    rect(s, x - 2, y - 2, w + 4, h + 4, vec4(0, 0, 0, 0.55f));
-    rect(s, x, y, w, h, vec4(col * 0.25f, 0.8f));
-    rect(s, x, y, w * saturate(frac), h, vec4(col, 0.95f));
-    if (!label.empty()) text(s, x + 5, y + (h - 7 * px) * 0.5f, label, px, vec4(1, 1, 1, 0.95f));
+    rect(s, x - 3, y - 3, w + 6, h + 6, vec4(0, 0, 0, 0.45f));
+    rect(s, x - 1, y - 1, w + 2, h + 2, vec4(col * 0.6f, 0.6f));
+    gradient(s, x, y, w, h, vec4(col * 0.18f, 0.85f), vec4(col * 0.08f, 0.85f), 4);
+    float fw = w * saturate(frac);
+    gradient(s, x, y, fw, h, vec4(lerp(col, vec3(1, 1, 1), 0.35f), 0.97f), vec4(col * 0.75f, 0.97f), 6);
+    rect(s, x, y, fw, std::max(1.0f, h * 0.12f), vec4(1, 1, 1, 0.25f));
+    if (!label.empty()) text(s, x + 6, y + (h - 7 * px) * 0.5f, label, px, vec4(1, 1, 1, 0.95f));
 }
 
 void panelBox(FrameScene& s, float x, float y, float w, float h) {
-    vec4 edge(0.9f, 0.7f, 0.35f, 0.8f);
-    rect(s, x, y, w, h, vec4(0.04f, 0.04f, 0.06f, 0.96f));
-    rect(s, x - 3, y - 3, w + 6, 3, edge);
-    rect(s, x - 3, y + h, w + 6, 3, edge);
-    rect(s, x - 3, y, 3, h, edge);
-    rect(s, x + w, y, 3, h, edge);
+    rect(s, x - 10, y - 10, w + 20, h + 20, vec4(0, 0, 0, 0.25f));  // soft shadow
+    gradient(s, x, y, w, h, vec4(0.09f, 0.08f, 0.1f, 0.96f), vec4(0.03f, 0.03f, 0.05f, 0.97f), 12);
+    vec4 edge(0.95f, 0.72f, 0.36f, 0.85f), inner(0.95f, 0.72f, 0.36f, 0.25f);
+    rect(s, x - 2, y - 2, w + 4, 2, edge);
+    rect(s, x - 2, y + h, w + 4, 2, edge);
+    rect(s, x - 2, y, 2, h, edge);
+    rect(s, x + w, y, 2, h, edge);
+    rect(s, x + 6, y + 6, w - 12, 1, inner);
+    rect(s, x + 6, y + h - 7, w - 12, 1, inner);
 }
 
 std::string fmtTime(float t) {
@@ -460,7 +475,7 @@ void Game::drawPanels(FrameScene& s) {
     if (panel_ == PANEL_TAME && panelTarget_ >= 0) {
         const Creature& c = creatures_[panelTarget_];
         const Species& sp = SPECIES[c.species];
-        float w = 560 * ui, h = 330 * ui, x = (W - w) * 0.5f, y = H * 0.18f;
+        float w = 640 * ui, h = 330 * ui, x = (W - w) * 0.5f, y = H * 0.18f;
         panelBox(s, x, y, w, h);
         text(s, x + 20 * ui, y + 16 * ui, std::string(sp.name) + "  -  LV " + std::to_string(c.level), 3 * ui, vec4(1, 0.85f, 0.45f, 1));
         text(s, x + 20 * ui, y + 48 * ui, sp.lore, 1.2f * ui, vec4(0.8f, 0.85f, 0.9f, 1));
@@ -490,7 +505,7 @@ void Game::drawPanels(FrameScene& s) {
             Item it = k == 0 ? I_MYTHBAIT : k == 1 ? I_WILDBAIT : k == 3 ? I_DREAMBERRY
                     : (sp.diet == D_CARNIVORE ? (p.inv[I_COOKEDMEAT] > 0 ? I_COOKEDMEAT : I_RAWMEAT) : I_EMBERBERRY);
             t += "   (have " + std::to_string(p.inv[it]) + ")";
-            text(s, x + 20 * ui + (k % 2) * 270 * ui, oy + (k / 2) * 22 * ui, t, sm, p.inv[it] > 0 ? vec4(0.9f, 1, 0.9f, 1) : vec4(0.6f, 0.6f, 0.6f, 1));
+            text(s, x + 20 * ui + (k % 2) * 300 * ui, oy + (k / 2) * 22 * ui, t, sm, p.inv[it] > 0 ? vec4(0.9f, 1, 0.9f, 1) : vec4(0.6f, 0.6f, 0.6f, 1));
         }
         textC(s, W * 0.5f, y + h - 24 * ui, "ESC CLOSE  -  guard it while it eats: the tribe hunts at night", sm, vec4(0.7f, 0.7f, 0.7f, 1));
     }

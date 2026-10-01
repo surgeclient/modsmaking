@@ -8,14 +8,13 @@ layout(location = 1) out vec3 vNormal;
 
 void main() {
     vec3 p = inPos;
-    // Keep the ocean centred under the camera so it never ends.
-    p.xz += floor(S.camPos.xz / 16.0) * 16.0;
+    p.xz += floor(S.camPos.xz / 32.0) * 32.0;
     float t = S.params.x;
     float h = 0.0;
     vec2 grad = vec2(0.0);
-    const vec3 waves[4] = vec3[](vec3(0.021, 0.013, 1.1), vec3(-0.017, 0.024, 0.9), vec3(0.042, -0.031, 1.7), vec3(-0.06, -0.047, 2.3));
-    const float amps[4] = float[](0.35, 0.28, 0.12, 0.07);
-    for (int i = 0; i < 4; i++) {
+    const vec3 waves[5] = vec3[](vec3(0.021, 0.013, 1.1), vec3(-0.017, 0.024, 0.9), vec3(0.042, -0.031, 1.7), vec3(-0.06, -0.047, 2.3), vec3(0.09, 0.07, 2.9));
+    const float amps[5] = float[](0.32, 0.26, 0.12, 0.07, 0.04);
+    for (int i = 0; i < 5; i++) {
         float ph = dot(p.xz, waves[i].xy * 6.0) + t * waves[i].z;
         h += sin(ph) * amps[i];
         grad += cos(ph) * amps[i] * waves[i].xy * 6.0;

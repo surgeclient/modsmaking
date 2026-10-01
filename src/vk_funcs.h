@@ -86,6 +86,7 @@
     X(vkCmdCopyBuffer)                  \
     X(vkCmdPipelineBarrier)             \
     X(vkCmdCopyImageToBuffer)           \
+    X(vkCmdCopyBufferToImage)           \
     X(vkCreateSemaphore)                \
     X(vkDestroySemaphore)               \
     X(vkCreateFence)                    \

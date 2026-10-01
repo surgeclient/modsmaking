@@ -36,7 +36,10 @@ endif()
 
 # --- Shaders: GLSL -> SPIR-V headers. The compiled headers are committed in
 #     shaders/spv so the game builds even without glslangValidator. -----------
-set(SHADER_NAMES lit.vert lit.frag shadow.vert water.vert water.frag sky.vert sky.frag ui.vert ui.frag)
+set(SHADER_NAMES lit.vert skin.vert lit.frag terrain.vert terrain.frag shadow.vert shadow_skin.vert grass.vert grass.frag
+    water.vert water.frag sky.vert sky.frag particle.vert particle.frag post.vert bloom_down.frag bloom_up.frag composite.frag
+    ui.vert ui.frag)
+file(GLOB SHADER_INCLUDES ${CMAKE_SOURCE_DIR}/shaders/*.glsl)
 find_program(GLSLANG_VALIDATOR glslangValidator HINTS $ENV{VULKAN_SDK}/bin)
 set(SHADER_HEADERS)
 foreach(S ${SHADER_NAMES})
@@ -46,7 +49,7 @@ foreach(S ${SHADER_NAMES})
     add_custom_command(
       OUTPUT ${OUT}
       COMMAND ${GLSLANG_VALIDATOR} -V --vn spv_${VAR} -o ${OUT} ${CMAKE_SOURCE_DIR}/shaders/${S}
-      DEPENDS ${CMAKE_SOURCE_DIR}/shaders/${S} ${CMAKE_SOURCE_DIR}/shaders/scene_ubo.glsl ${CMAKE_SOURCE_DIR}/shaders/common_light.glsl
+      DEPENDS ${CMAKE_SOURCE_DIR}/shaders/${S} ${SHADER_INCLUDES}
       COMMENT "Compiling shader ${S}")
   endif()
   list(APPEND SHADER_HEADERS ${OUT})

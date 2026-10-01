@@ -28,7 +28,7 @@ struct Prop {
 
 class Terrain {
 public:
-    static constexpr int N = 320;          // cells per side
+    static constexpr int N = 512;          // cells per side
     static constexpr float HALF = 640.0f;  // world spans [-HALF, HALF]
     static constexpr float CELL = 2 * HALF / N;
 
@@ -39,6 +39,8 @@ public:
     vec3 normalAt(float x, float z) const;
     Biome biomeAt(float x, float z) const;
     void buildMesh(std::vector<Vertex>& v, std::vector<uint32_t>& idx) const;
+    // Height samples and grass colour/density (RGBA8) for the GPU grass, water and terrain shaders.
+    void buildMaps(int& n, std::vector<float>& heights, std::vector<uint32_t>& grass) const;
     // Terrain line-of-sight test (true when nothing blocks the segment).
     bool lineOfSight(vec3 a, vec3 b) const;
     // Random dry-land point in a biome (or any biome when b == B_COUNT).

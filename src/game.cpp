@@ -17,7 +17,14 @@ bool Game::init(GLFWwindow* window, Renderer* renderer, const Options& opt) {
     std::vector<uint32_t> idx;
     terrain_.buildMesh(v, idx);
     renderer_->uploadTerrain(v, idx);
+    int mapN = 0;
+    std::vector<float> heights;
+    std::vector<uint32_t> grass;
+    terrain_.buildMaps(mapN, heights, grass);
+    renderer_->uploadTerrainMaps(mapN, heights, grass);
     std::printf("Island ready: %zu props\n", props_.props.size());
+    std::printf("Sculpting models...\n");
+    models_.build(*renderer_);
 
     resetWorld();
     if (opt_.skipTrailer) startPlay();
@@ -297,6 +304,7 @@ void Game::frame(float dt) {
             titleTime_ += dt;
             time_ = 0.705f;
             updateCreatures(dt);
+            updateAmbientFX(dt);
             updateParticles(dt);
             {
                 float a = titleTime_ * 0.04f;
@@ -379,6 +387,7 @@ void Game::updatePlay(float dt) {
     updateEggsAndNests(dt);
     updateTribe(dt);
     updateProjectiles(dt);
+    updateAmbientFX(dt);
     updateParticles(dt);
     respawnWildlife(dt);
 
@@ -408,9 +417,10 @@ void Game::updatePlay(float dt) {
     camPos_.y = std::max(camPos_.y, ground + 0.6f);
     camTarget_ = focus + fwd * 12.0f + right * 0.7f;
     if (opt_.uiTest == "zoo") {
-        camPos_ = vec3(-160, 0, 60) + vec3(0, 0, 42);
-        camPos_.y = terrain_.heightAt(camPos_.x, camPos_.z) + 15.0f;
-        camTarget_ = vec3(-160, terrain_.heightAt(-160, 46) + 2.0f, 46);
+        float zoom = opt_.yaw;  // reused as a zoom factor for zoo shots (default PI)
+        camPos_ = vec3(-160, 0, 60) + vec3(0, 0, 42) * (zoom / PI);
+        camPos_.y = terrain_.heightAt(camPos_.x, camPos_.z) + 15.0f * (zoom / PI);
+        camTarget_ = vec3(-160, terrain_.heightAt(-160, 46) + 2.0f, 46 - 10.0f * (1.0f - zoom / PI));
     }
     if (shake_ > 0) {
         shake_ = std::max(0.0f, shake_ - dt);

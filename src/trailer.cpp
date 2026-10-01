@@ -162,6 +162,7 @@ void Game::updateTrailer(float dt) {
 
     updateCreatures(dt);
     updateProjectiles(dt);
+    updateAmbientFX(dt);
     updateParticles(dt);
     // Embers rising from the pit.
     if (shot >= 5 && rng_.chance(dt * 60)) {

@@ -2,6 +2,7 @@
 #include "renderer.h"
 #include "world.h"
 #include "data.h"
+#include "models.h"
 #include <string>
 #include <vector>
 
@@ -264,8 +265,10 @@ private:
     void drawProps(FrameScene& s);
     void drawCreature(FrameScene& s, const Creature& c);
     void drawInfected(FrameScene& s, const Infected& e);
-    void drawHumanoid(FrameScene& s, vec3 pos, float yaw, float scale, vec3 skin, vec3 cloth, vec3 mask, float walk,
-                      float swing, Item held, bool infected, int cls, float glow, float sit);
+    void drawHumanoid(FrameScene& s, const Rig& rig, vec3 pos, float yaw, float scale, vec3 tint, float walk, float moveAmt, float swing,
+                      Item held, bool infected, int cls, float glow, float sit, float hunch);
+    void animateCreature(const Creature& c, const Rig& rig, std::vector<mat4>& local) const;
+    void updateAmbientFX(float dt);
     void drawStructures(FrameScene& s);
     void drawEggs(FrameScene& s);
     void drawEffects(FrameScene& s);
@@ -343,6 +346,11 @@ private:
     float forcedSpawnAngle_ = -100.0f;  // trailer: make the tribe emerge facing the camera
     float titleTime_ = 0;
     float fade_ = 0;
+
+    // models & animation scratch
+    ModelLibrary models_;
+    std::vector<mat4> localScratch_, boneScratch_;
+    float fxTimer_ = 0;
 
     // captures
     bool captured_ = false;

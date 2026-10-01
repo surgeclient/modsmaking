@@ -339,3 +339,67 @@ bool Game::nearCampfire(vec3 p, float radius) const {
         if (s.alive && s.type == I_CAMPFIRE && distXZ(s.pos, p) < radius) return true;
     return false;
 }
+
+// Ambient effects: campfire flames & smoke, embers rising from the Hollow, fireflies,
+// burning creatures. Only spawned near the camera.
+void Game::updateAmbientFX(float dt) {
+    fxTimer_ += dt;
+    auto chance = [&](float perSecond) { return rng_.chance(std::min(1.0f, perSecond * dt)); };
+    for (const auto& st : structures_) {
+        if (!st.alive || st.type != I_CAMPFIRE || distXZ(st.pos, camPos_) > 120) continue;
+        for (int k = 0; k < 2; k++)
+            if (chance(30)) {
+                Particle p;
+                p.pos = st.pos + vec3(rng_.range(-0.35f, 0.35f), 0.25f, rng_.range(-0.35f, 0.35f));
+                p.vel = vec3(rng_.range(-0.3f, 0.3f), rng_.range(1.5f, 2.6f), rng_.range(-0.3f, 0.3f));
+                p.color = rng_.chance(0.5f) ? vec3(1.0f, 0.45f, 0.1f) : vec3(1.0f, 0.75f, 0.3f);
+                p.life = p.maxLife = rng_.range(0.4f, 0.8f);
+                p.size = rng_.range(0.25f, 0.45f);
+                p.emissive = 1.6f;
+                p.gravity = -1.0f;
+                particles_.push_back(p);
+            }
+        if (chance(6)) {
+            Particle p;
+            p.pos = st.pos + vec3(rng_.range(-0.2f, 0.2f), 1.1f, rng_.range(-0.2f, 0.2f));
+            p.vel = vec3(rng_.range(-0.2f, 0.4f), rng_.range(0.8f, 1.3f), rng_.range(-0.2f, 0.2f));
+            p.color = vec3(0.25f, 0.23f, 0.22f);
+            p.life = p.maxLife = rng_.range(2.5f, 4.0f);
+            p.size = rng_.range(0.35f, 0.6f);
+            p.emissive = 0;
+            p.gravity = -0.15f;
+            particles_.push_back(p);
+        }
+        if (chance(4)) spawnParticles(st.pos + vec3(0, 0.5f, 0), 1, vec3(1.0f, 0.6f, 0.2f), 2.5f, 1.2f, 0.06f, 2.0f, -2.5f);
+    }
+    float night = time_ >= 0.75f || time_ < 0.25f ? 1.0f : 0.0f;
+    bool hollowOpen = nightActive_ || mode_ != GM_PLAY;
+    if (night > 0 && hollowOpen && distXZ(camPos_, vec3(0, 0, 0)) < 400 && chance(25)) {
+        vec3 p(rng_.range(-22, 22), 0, rng_.range(-22, 22));
+        p.y = terrain_.heightAt(p.x, p.z) + 0.3f;
+        spawnParticles(p, 1, vec3(1.0f, 0.25f, 0.06f), 1.5f, 4.0f, 0.18f, 1.8f, -2.5f);
+    }
+    if (night > 0 && mode_ == GM_PLAY && chance(6)) {
+        vec3 p = camPos_ + vec3(rng_.range(-30, 30), 0, rng_.range(-30, 30));
+        Biome b = terrain_.biomeAt(p.x, p.z);
+        if (b == B_FOREST || b == B_JUNGLE || b == B_MEADOW) {
+            p.y = terrain_.heightAt(p.x, p.z) + rng_.range(0.5f, 2.5f);
+            Particle f;
+            f.pos = p;
+            f.vel = vec3(rng_.range(-0.4f, 0.4f), rng_.range(-0.1f, 0.3f), rng_.range(-0.4f, 0.4f));
+            f.color = vec3(0.7f, 1.0f, 0.4f);
+            f.life = f.maxLife = rng_.range(3.0f, 6.0f);
+            f.size = 0.09f;
+            f.emissive = 2.5f;
+            f.gravity = 0;
+            particles_.push_back(f);
+        }
+    }
+    for (const auto& c : creatures_) {
+        if (!c.alive || c.state == CS_DEAD || distXZ(c.pos, camPos_) > 150) continue;
+        if (c.species == S_PHOENIX && chance(c.flying ? 25 : 8))
+            spawnParticles(c.pos + vec3(0, creatureHeight(c) * 0.6f, 0), 1, vec3(1.0f, 0.55f, 0.12f), 1.2f, 0.9f, 0.3f, 1.6f, -1.5f);
+        if (c.species == S_SALAMANDER && chance(5))
+            spawnParticles(c.pos + vec3(0, creatureHeight(c), 0), 1, vec3(1.0f, 0.6f, 0.15f), 0.6f, 0.6f, 0.12f, 1.6f, -2.0f);
+    }
+}
